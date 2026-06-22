@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="es" class="bg-paper">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="theme-color" content="#07393c" />
+    <meta name="description" content="Control de stock privado para pequeño negocio. Escaneo de código de barras, entradas y salidas, alertas de stock mínimo, reportes e historial de movimientos." />
+    <title>Stock Barrio — Control de Inventario</title>
+
+    <!-- Tailwind (Play CDN: rápido para empezar; ver README para build de producción) -->
+    <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              // Paleta: 0a090c · f0edee · 07393c · 2c666e · 90ddf0
+              paper: "#f0edee",
+              ink: { DEFAULT: "#0a090c", soft: "#3a393d" },
+              brand: {
+                DEFAULT: "#07393c",
+                dark: "#052b2d",
+                mid: "#2c666e",
+                sky: "#90ddf0",
+              },
+            },
+            fontFamily: {
+              sans: ["system-ui", "-apple-system", "Segoe UI", "Roboto", "sans-serif"],
+            },
+          },
+        },
+      };
+    </script>
+
+    <!-- Escáner de código de barras -->
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+
+    <link rel="stylesheet" href="./css/styles.css" />
+  </head>
+
+  <body class="min-h-screen bg-paper text-ink antialiased">
+    <!-- ============ PANTALLA DE CARGA ============ -->
+    <div id="splash" class="fixed inset-0 z-50 flex items-center justify-center bg-paper">
+      <div class="flex flex-col items-center gap-3 text-brand">
+        <svg class="h-10 w-10 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+        </svg>
+        <p class="text-sm font-medium text-ink/50">Cargando…</p>
+      </div>
+    </div>
+
+    <!-- ============ AVISO: FALTA CONFIGURAR FIREBASE ============ -->
+    <div id="config-warning" class="hidden fixed inset-0 z-40 items-center justify-center bg-paper p-6">
+      <div class="max-w-md rounded-2xl bg-white p-6 shadow-lg ring-1 ring-ink/10">
+        <h2 class="text-lg font-bold text-ink">Configura Firebase</h2>
+        <p class="mt-2 text-sm leading-relaxed text-ink/70">
+          Para usar la app, abre el archivo <code class="rounded bg-paper px-1 py-0.5 font-mono text-brand">js/config.js</code>
+          y reemplaza los valores <code class="rounded bg-paper px-1 py-0.5 font-mono text-brand">TU_…</code> con las credenciales de tu proyecto Firebase. Las encuentras en
+          <span class="font-medium">Configuración del proyecto → Tus apps → SDK</span>.
+        </p>
+      </div>
+    </div>
+
+    <!-- ============ LOGIN ============ -->
+    <section id="login-view" class="hidden min-h-screen items-center justify-center px-5">
+      <div class="w-full max-w-sm">
+        <div class="mb-8 text-center">
+          <div class="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-brand text-white shadow-lg">
+            <svg class="h-8 w-8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"></path>
+              <path d="m3.3 7 8.7 5 8.7-5"></path>
+              <path d="M12 22V12"></path>
+            </svg>
+          </div>
+          <h1 class="text-2xl font-bold text-ink">Stock Barrio</h1>
+          <p class="mt-1 text-sm text-ink/50">Inicia sesión para gestionar tu inventario</p>
+        </div>
+
+        <form id="login-form" class="space-y-4 rounded-2xl bg-white p-6 shadow-sm ring-1 ring-ink/10">
+          <div>
+            <label for="login-email" class="mb-1 block text-sm font-medium text-ink/80">Correo</label>
+            <input id="login-email" type="email" required autocomplete="email"
+              class="w-full rounded-xl border-ink/15 text-base focus:border-brand focus:ring-brand"
+              placeholder="tu@correo.com" />
+          </div>
+          <div>
+            <label for="login-password" class="mb-1 block text-sm font-medium text-ink/80">Contraseña</label>
+            <input id="login-password" type="password" required autocomplete="current-password" minlength="6"
+              class="w-full rounded-xl border-ink/15 text-base focus:border-brand focus:ring-brand"
+              placeholder="••••••••" />
+          </div>
+          <p id="login-error" class="hidden rounded-lg bg-ink/5 px-3 py-2 text-sm text-ink ring-1 ring-ink/15" role="alert"></p>
+          <button type="submit"
+            class="w-full rounded-xl bg-brand px-4 py-3 text-base font-semibold text-white shadow-sm transition active:scale-[0.98] hover:bg-brand-dark">
+            Entrar
+          </button>
+        </form>
+        <p class="mt-4 text-center text-xs text-ink/40">
+          Acceso privado. Las cuentas las crea el administrador en Firebase.
+        </p>
+      </div>
+    </section>
+
+    <!-- ============ APP ============ -->
+    <div id="app-view" class="hidden pb-24">
+      <!-- Header -->
+      <header class="sticky top-0 z-20 flex items-center justify-between border-b border-ink/10 bg-white px-4 py-3">
+        <div class="flex items-center gap-2">
+          <span class="flex h-8 w-8 items-center justify-center rounded-lg bg-brand text-white">
+            <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" stroke-linecap="round" stroke-linejoin="round"></path>
+            </svg>
+          </span>
+          <h1 id="header-title" class="text-lg font-bold text-ink">Inventario</h1>
+        </div>
+        <button id="logout-btn" class="rounded-lg p-2 text-ink/50 transition hover:bg-ink/5 hover:text-ink" aria-label="Cerrar sesión">
+          <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+            <polyline points="16 17 21 12 16 7"></polyline>
+            <line x1="21" y1="12" x2="9" y2="12"></line>
+          </svg>
+        </button>
+      </header>
+
+      <main class="px-4 py-4">
+        <!-- ====== TAB: ESCÁNER ====== -->
+        <section id="tab-scan" class="tab-panel">
+          <div class="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-ink/10">
+            <h2 class="text-base font-semibold text-ink">Escanear producto</h2>
+            <p class="mt-1 text-sm text-ink/50">Apunta la cámara al código de barras.</p>
+
+            <div id="scanner-container" class="mt-4 overflow-hidden rounded-xl bg-ink"></div>
+            <div id="scanner-placeholder" class="mt-4 flex aspect-square w-full flex-col items-center justify-center rounded-xl border-2 border-dashed border-ink/20 bg-paper text-ink/40">
+              <svg class="h-12 w-12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                <path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2" stroke-linecap="round" stroke-linejoin="round"></path>
+                <line x1="7" y1="12" x2="17" y2="12" stroke-linecap="round"></line>
+              </svg>
+              <p class="mt-2 text-sm">Cámara apagada</p>
+            </div>
+
+            <div class="mt-4 grid grid-cols-2 gap-3">
+              <button id="scan-start-btn"
+                class="col-span-2 flex items-center justify-center gap-2 rounded-xl bg-brand px-4 py-3 font-semibold text-white shadow-sm transition active:scale-[0.98] hover:bg-brand-dark">
+                <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="13" r="4"/></svg>
+                Activar cámara
+              </button>
+              <button id="scan-stop-btn"
+                class="col-span-2 hidden items-center justify-center gap-2 rounded-xl bg-ink/10 px-4 py-3 font-semibold text-ink transition active:scale-[0.98] hover:bg-ink/15">
+                Detener cámara
+              </button>
+            </div>
+
+            <div class="mt-3 flex items-center gap-3">
+              <div class="h-px flex-1 bg-ink/10"></div>
+              <span class="text-xs font-medium uppercase text-ink/40">o</span>
+              <div class="h-px flex-1 bg-ink/10"></div>
+            </div>
+
+            <button id="manual-entry-btn"
+              class="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-ink/15 px-4 py-3 font-semibold text-ink/80 transition active:scale-[0.98] hover:bg-paper">
+              <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10v4M10 10v4M14 10v4M18 10v4"/></svg>
+              Ingresar código manualmente
+            </button>
+          </div>
+        </section>
+
+        <!-- ====== TAB: INVENTARIO ====== -->
+        <section id="tab-inventory" class="tab-panel hidden">
+          <!-- Estado de sincronización con la nube -->
+          <div class="mb-3 flex items-center justify-between rounded-xl bg-white px-3 py-2 text-xs shadow-sm ring-1 ring-ink/10">
+            <span class="flex items-center gap-1.5 text-ink/60">
+              <svg class="h-3.5 w-3.5 text-brand" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.5 19a4.5 4.5 0 0 0 0-9h-1.8A7 7 0 1 0 4 15.7"/><path d="M12 12v9"/><path d="m8 17 4 4 4-4"/></svg>
+              <span id="sync-status">…</span>
+            </span>
+            <button id="sync-btn"
+              class="flex items-center gap-1.5 rounded-lg bg-ink/5 px-2.5 py-1.5 font-semibold text-ink/80 transition active:scale-95 hover:bg-ink/10 disabled:opacity-40">
+              <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M3 21v-5h5"/></svg>
+              Sincronizar
+            </button>
+          </div>
+
+          <div class="mb-3 flex items-center gap-2">
+            <div class="relative flex-1">
+              <svg class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink/40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3" stroke-linecap="round"/></svg>
+              <input id="inventory-search" type="search" placeholder="Buscar por nombre o código"
+                class="w-full rounded-xl border-ink/15 pl-9 text-sm focus:border-brand focus:ring-brand" />
+            </div>
+            <button id="add-product-btn" class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand text-white shadow-sm transition active:scale-95 hover:bg-brand-dark" aria-label="Agregar producto">
+              <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            </button>
+          </div>
+
+          <!-- Resumen de valor de inventario -->
+          <div id="inventory-summary" class="mb-3 hidden grid grid-cols-3 gap-2">
+            <div class="rounded-xl border border-ink/10 bg-white p-3 text-center shadow-sm">
+              <p class="text-[11px] font-medium uppercase tracking-wide text-ink/40">Costo</p>
+              <p id="summary-cost" class="mt-0.5 text-base font-bold text-ink">$0</p>
+            </div>
+            <div class="rounded-xl border border-ink/10 bg-white p-3 text-center shadow-sm">
+              <p class="text-[11px] font-medium uppercase tracking-wide text-ink/40">Venta</p>
+              <p id="summary-sale" class="mt-0.5 text-base font-bold text-ink">$0</p>
+            </div>
+            <div class="rounded-xl border border-brand/30 bg-brand-sky/25 p-3 text-center shadow-sm">
+              <p class="text-[11px] font-medium uppercase tracking-wide text-brand">Ganancia</p>
+              <p id="summary-profit" class="mt-0.5 text-base font-bold text-brand">$0</p>
+            </div>
+          </div>
+
+          <div id="low-stock-banner" class="mb-3 hidden items-center gap-2 rounded-xl bg-ink px-4 py-3 text-sm text-paper">
+            <svg class="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            <span id="low-stock-text"></span>
+          </div>
+
+          <ul id="inventory-list" class="space-y-2"></ul>
+          <p id="inventory-empty" class="hidden py-12 text-center text-sm text-ink/40">No hay productos todavía. Toca el botón + para agregar el primero.</p>
+        </section>
+
+        <!-- ====== TAB: REPORTES ====== -->
+        <section id="tab-reports" class="tab-panel hidden">
+          <h2 class="text-base font-semibold text-ink">Resumen de inventario</h2>
+          <p class="mt-1 text-sm text-ink/50">Una foto del estado actual de tu negocio.</p>
+
+          <!-- Tarjetas de valor -->
+          <div class="mt-4 grid grid-cols-2 gap-2">
+            <div class="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-ink/10">
+              <p class="text-[11px] font-medium uppercase tracking-wide text-ink/40">Productos</p>
+              <p id="rep-total-products" class="mt-1 text-2xl font-bold text-ink">0</p>
+            </div>
+            <div class="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-ink/10">
+              <p class="text-[11px] font-medium uppercase tracking-wide text-ink/40">Unidades</p>
+              <p id="rep-total-units" class="mt-1 text-2xl font-bold text-ink">0</p>
+            </div>
+          </div>
+
+          <div class="mt-2 grid grid-cols-3 gap-2">
+            <div class="rounded-2xl bg-white p-3 text-center shadow-sm ring-1 ring-ink/10">
+              <p class="text-[11px] font-medium uppercase tracking-wide text-ink/40">Costo</p>
+              <p id="rep-cost" class="mt-0.5 text-base font-bold text-ink">$0</p>
+            </div>
+            <div class="rounded-2xl bg-white p-3 text-center shadow-sm ring-1 ring-ink/10">
+              <p class="text-[11px] font-medium uppercase tracking-wide text-ink/40">Venta</p>
+              <p id="rep-sale" class="mt-0.5 text-base font-bold text-ink">$0</p>
+            </div>
+            <div class="rounded-2xl border border-brand/30 bg-brand-sky/25 p-3 text-center shadow-sm">
+              <p class="text-[11px] font-medium uppercase tracking-wide text-brand">Ganancia</p>
+              <p id="rep-profit" class="mt-0.5 text-base font-bold text-brand">$0</p>
+            </div>
+          </div>
+
+          <!-- Movimientos de hoy -->
+          <h3 class="mt-6 text-sm font-semibold uppercase tracking-wide text-ink/50">Movimientos de hoy</h3>
+          <div class="mt-2 grid grid-cols-2 gap-2">
+            <div class="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-ink/10">
+              <div class="flex items-center gap-2 text-brand">
+                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                <span class="text-xs font-semibold uppercase tracking-wide">Entradas</span>
+              </div>
+              <p id="rep-in-units" class="mt-1 text-2xl font-bold text-ink">0</p>
+              <p id="rep-in-ops" class="text-xs text-ink/40">0 operaciones</p>
+            </div>
+            <div class="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-ink/10">
+              <div class="flex items-center gap-2 text-brand-mid">
+                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                <span class="text-xs font-semibold uppercase tracking-wide">Salidas</span>
+              </div>
+              <p id="rep-out-units" class="mt-1 text-2xl font-bold text-ink">0</p>
+              <p id="rep-out-ops" class="text-xs text-ink/40">0 operaciones</p>
+            </div>
+          </div>
+
+          <!-- Stock bajo -->
+          <h3 class="mt-6 text-sm font-semibold uppercase tracking-wide text-ink/50">Stock bajo el mínimo</h3>
+          <ul id="rep-low-list" class="mt-2 space-y-2"></ul>
+          <p id="rep-low-empty" class="hidden rounded-xl bg-white px-4 py-6 text-center text-sm text-ink/40 ring-1 ring-ink/10">Todo en orden: ningún producto bajo el mínimo.</p>
+        </section>
+
+        <!-- ====== TAB: HISTORIAL ====== -->
+        <section id="tab-history" class="tab-panel hidden">
+          <div class="mb-1 flex items-center justify-between">
+            <h2 class="text-base font-semibold text-ink">Movimientos de hoy</h2>
+            <button id="export-csv-btn"
+              class="flex items-center gap-1.5 rounded-lg border border-ink/15 px-3 py-1.5 text-xs font-semibold text-ink/80 transition active:scale-95 hover:bg-paper disabled:opacity-40"
+              disabled>
+              <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              CSV
+            </button>
+          </div>
+          <span id="history-date" class="mb-3 block text-sm text-ink/40"></span>
+          <ul id="history-list" class="space-y-2"></ul>
+          <p id="history-empty" class="hidden py-12 text-center text-sm text-ink/40">Aún no hay movimientos registrados hoy.</p>
+        </section>
+      </main>
+
+      <!-- Bottom nav -->
+      <nav class="fixed inset-x-0 bottom-0 z-20 border-t border-ink/10 bg-white">
+        <div class="mx-auto grid max-w-lg grid-cols-4">
+          <button data-tab="tab-scan" class="nav-btn flex flex-col items-center gap-1 py-2.5 text-brand">
+            <svg class="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="13" r="4"/></svg>
+            <span class="text-xs font-medium">Escanear</span>
+          </button>
+          <button data-tab="tab-inventory" class="nav-btn flex flex-col items-center gap-1 py-2.5 text-ink/40">
+            <svg class="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 7h-9M14 17H5M17 17a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM7 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/></svg>
+            <span class="text-xs font-medium">Inventario</span>
+          </button>
+          <button data-tab="tab-reports" class="nav-btn flex flex-col items-center gap-1 py-2.5 text-ink/40">
+            <svg class="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><rect x="7" y="11" width="3" height="6"/><rect x="12" y="7" width="3" height="10"/><rect x="17" y="13" width="3" height="4"/></svg>
+            <span class="text-xs font-medium">Reportes</span>
+          </button>
+          <button data-tab="tab-history" class="nav-btn flex flex-col items-center gap-1 py-2.5 text-ink/40">
+            <svg class="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/></svg>
+            <span class="text-xs font-medium">Historial</span>
+          </button>
+        </div>
+      </nav>
+    </div>
+
+    <!-- ============ MODAL: OPERACIÓN RÁPIDA (sumar / restar) ============ -->
+    <div id="operation-modal" class="modal hidden">
+      <div class="modal-backdrop" data-close></div>
+      <div class="modal-sheet">
+        <div class="mx-auto mb-3 h-1.5 w-12 rounded-full bg-ink/20"></div>
+        <div id="operation-product-info" class="rounded-xl bg-paper p-3 text-center">
+          <p id="op-product-name" class="text-lg font-bold text-ink">—</p>
+          <p class="text-sm text-ink/50">Código: <span id="op-product-code" class="font-mono"></span></p>
+          <p class="mt-1 text-sm">Stock actual: <span id="op-product-stock" class="font-bold text-ink"></span></p>
+        </div>
+
+        <div class="mt-4">
+          <label for="op-quantity" class="mb-1 block text-sm font-medium text-ink/80">Cantidad</label>
+          <div class="flex items-center gap-2">
+            <button type="button" id="op-minus" class="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-ink/10 text-2xl font-bold text-ink active:scale-95">−</button>
+            <input id="op-quantity" type="number" inputmode="numeric" min="1" value="1"
+              class="h-12 w-full rounded-xl border-ink/15 text-center text-xl font-bold focus:border-brand focus:ring-brand" />
+            <button type="button" id="op-plus" class="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-ink/10 text-2xl font-bold text-ink active:scale-95">+</button>
+          </div>
+        </div>
+
+        <div class="mt-5 grid grid-cols-2 gap-3">
+          <button id="op-entrada-btn" class="flex flex-col items-center gap-1 rounded-xl bg-brand px-4 py-4 font-semibold text-white shadow-sm transition active:scale-[0.98] hover:bg-brand-dark">
+            <svg class="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Sumar stock
+          </button>
+          <button id="op-salida-btn" class="flex flex-col items-center gap-1 rounded-xl bg-brand-mid px-4 py-4 font-semibold text-white shadow-sm transition active:scale-[0.98] hover:bg-brand">
+            <svg class="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Restar venta
+          </button>
+        </div>
+        <button data-close class="mt-3 w-full rounded-xl py-2.5 text-sm font-medium text-ink/50 hover:bg-paper">Cancelar</button>
+      </div>
+    </div>
+
+    <!-- ============ MODAL: PRODUCTO NO ENCONTRADO ============ -->
+    <div id="notfound-modal" class="modal hidden">
+      <div class="modal-backdrop" data-close></div>
+      <div class="modal-sheet text-center">
+        <div class="mx-auto mb-3 h-1.5 w-12 rounded-full bg-ink/20"></div>
+        <div class="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-brand-sky/30 text-brand">
+          <svg class="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/><line x1="11" y1="8" x2="11" y2="12"/><line x1="11" y1="15" x2="11.01" y2="15"/></svg>
+        </div>
+        <h3 class="mt-3 text-lg font-bold text-ink">Producto no registrado</h3>
+        <p class="mt-1 text-sm text-ink/50">El código <span id="notfound-code" class="font-mono font-medium text-ink/80"></span> no existe en tu inventario.</p>
+        <button id="notfound-create-btn" class="mt-4 w-full rounded-xl bg-brand px-4 py-3 font-semibold text-white transition active:scale-[0.98] hover:bg-brand-dark">Crear este producto</button>
+        <button data-close class="mt-2 w-full rounded-xl py-2.5 text-sm font-medium text-ink/50 hover:bg-paper">Cancelar</button>
+      </div>
+    </div>
+
+    <!-- ============ MODAL: FORMULARIO DE PRODUCTO ============ -->
+    <div id="product-modal" class="modal hidden">
+      <div class="modal-backdrop" data-close></div>
+      <div class="modal-sheet max-h-[90vh] overflow-y-auto">
+        <div class="mx-auto mb-3 h-1.5 w-12 rounded-full bg-ink/20"></div>
+        <h3 id="product-modal-title" class="text-lg font-bold text-ink">Nuevo producto</h3>
+        <form id="product-form" class="mt-4 space-y-3">
+          <div>
+            <label for="pf-codigo" class="mb-1 block text-sm font-medium text-ink/80">Código de barra</label>
+            <input id="pf-codigo" type="text" inputmode="numeric" required
+              class="w-full rounded-xl border-ink/15 font-mono text-base focus:border-brand focus:ring-brand" placeholder="7791234567890" />
+          </div>
+          <div>
+            <label for="pf-nombre" class="mb-1 block text-sm font-medium text-ink/80">Nombre</label>
+            <input id="pf-nombre" type="text" required
+              class="w-full rounded-xl border-ink/15 text-base focus:border-brand focus:ring-brand" placeholder="Yerba 1kg" />
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label for="pf-cantidad" class="mb-1 block text-sm font-medium text-ink/80">Cantidad actual</label>
+              <input id="pf-cantidad" type="number" inputmode="numeric" min="0" required value="0"
+                class="w-full rounded-xl border-ink/15 text-base focus:border-brand focus:ring-brand" />
+            </div>
+            <div>
+              <label for="pf-minimo" class="mb-1 block text-sm font-medium text-ink/80">Stock mínimo</label>
+              <input id="pf-minimo" type="number" inputmode="numeric" min="0" required value="0"
+                class="w-full rounded-xl border-ink/15 text-base focus:border-brand focus:ring-brand" />
+            </div>
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label for="pf-costo" class="mb-1 block text-sm font-medium text-ink/80">Precio costo</label>
+              <input id="pf-costo" type="number" inputmode="decimal" min="0" step="0.01" value="0"
+                class="w-full rounded-xl border-ink/15 text-base focus:border-brand focus:ring-brand" />
+            </div>
+            <div>
+              <label for="pf-venta" class="mb-1 block text-sm font-medium text-ink/80">Precio venta</label>
+              <input id="pf-venta" type="number" inputmode="decimal" min="0" step="0.01" value="0"
+                class="w-full rounded-xl border-ink/15 text-base focus:border-brand focus:ring-brand" />
+            </div>
+          </div>
+          <p id="product-error" class="hidden rounded-lg bg-ink/5 px-3 py-2 text-sm text-ink ring-1 ring-ink/15" role="alert"></p>
+          <div class="flex gap-3 pt-1">
+            <button type="button" id="product-delete-btn" class="hidden rounded-xl border border-ink/30 px-4 py-3 font-semibold text-ink transition active:scale-95 hover:bg-ink hover:text-paper" aria-label="Eliminar producto">
+              <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+            </button>
+            <button type="submit" class="flex-1 rounded-xl bg-brand px-4 py-3 font-semibold text-white shadow-sm transition active:scale-[0.98] hover:bg-brand-dark">Guardar</button>
+          </div>
+        </form>
+        <button data-close class="mt-2 w-full rounded-xl py-2.5 text-sm font-medium text-ink/50 hover:bg-paper">Cancelar</button>
+      </div>
+    </div>
+
+    <!-- ============ TOAST ============ -->
+    <div id="toast" class="pointer-events-none fixed bottom-28 left-1/2 z-50 hidden -translate-x-1/2 rounded-full px-5 py-2.5 text-sm font-medium text-white shadow-lg"></div>
+
+    <script type="module" src="./js/app.js"></script>
+  </body>
+</html>
