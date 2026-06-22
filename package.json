@@ -1,0 +1,13 @@
+{
+  "name": "stock-barrio",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Control de stock para pequeño negocio de barrio (HTML + Tailwind + JS vanilla + Firebase)",
+  "scripts": {
+    "dev": "serve -l 3000 .",
+    "start": "serve -l 3000 ."
+  },
+  "devDependencies": {
+    "serve": "^14.2.4"
+  }
+}
