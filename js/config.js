@@ -14,12 +14,13 @@
 // ============================================================
 
 export const firebaseConfig = {
-  apiKey: "TU_API_KEY",
-  authDomain: "TU_PROYECTO.firebaseapp.com",
-  projectId: "TU_PROYECTO",
-  storageBucket: "TU_PROYECTO.appspot.com",
-  messagingSenderId: "TU_SENDER_ID",
-  appId: "TU_APP_ID",
+  apiKey: "AIzaSyCB6mlKoTX_yQRko2B4MDq99lhcHtTn_Ig",
+  authDomain: "stock-celular.firebaseapp.com",
+  projectId: "stock-celular",
+  storageBucket: "stock-celular.firebasestorage.app",
+  messagingSenderId: "953647568198",
+  appId: "1:953647568198:web:71fea72d12438c426f4147",
+  measurementId: "G-XDP68C8XS2"
 };
 
 // No edites esto: detecta si todavía faltan las credenciales.
