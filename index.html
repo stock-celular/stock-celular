@@ -100,11 +100,50 @@
     </section>
 
     <!-- ============ APP ============ -->
-    <div id="app-view" class="hidden pb-24">
+    <div id="app-view" class="hidden">
+     <div class="lg:flex lg:min-h-screen">
+
+      <!-- ===== Sidebar (notebook) ===== -->
+      <aside class="hidden w-60 shrink-0 flex-col border-r border-ink/10 bg-white lg:flex">
+        <div class="flex items-center gap-2 border-b border-ink/10 px-5 py-4">
+          <span class="flex h-9 w-9 items-center justify-center rounded-lg bg-brand text-white">
+            <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </span>
+          <div>
+            <p class="text-sm font-bold leading-tight text-ink">Stock Barrio</p>
+            <p class="text-xs text-ink/40">Control de inventario</p>
+          </div>
+        </div>
+        <nav class="flex flex-1 flex-col gap-1 p-3">
+          <button data-tab="tab-pos" class="nav-btn nav-side flex items-center gap-3 rounded-xl px-3 py-2.5 text-left text-brand">
+            <svg class="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="21" r="1"/><circle cx="19" cy="21" r="1"/><path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12"/></svg>
+            <span class="text-sm font-medium">Caja</span>
+          </button>
+          <button data-tab="tab-scan" class="nav-btn nav-side flex items-center gap-3 rounded-xl px-3 py-2.5 text-left">
+            <svg class="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5v14M7 5v14M11 5v14M14 5v14M18 5v14M21 5v14"/></svg>
+            <span class="text-sm font-medium">Escanear</span>
+          </button>
+          <button data-tab="tab-inventory" class="nav-btn nav-side flex items-center gap-3 rounded-xl px-3 py-2.5 text-left">
+            <svg class="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 7h-9M14 17H5M17 17a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM7 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/></svg>
+            <span class="text-sm font-medium">Inventario</span>
+          </button>
+          <button data-tab="tab-reports" class="nav-btn nav-side flex items-center gap-3 rounded-xl px-3 py-2.5 text-left">
+            <svg class="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><rect x="7" y="11" width="3" height="6"/><rect x="12" y="7" width="3" height="10"/><rect x="17" y="13" width="3" height="4"/></svg>
+            <span class="text-sm font-medium">Reportes</span>
+          </button>
+          <button data-tab="tab-history" class="nav-btn nav-side flex items-center gap-3 rounded-xl px-3 py-2.5 text-left">
+            <svg class="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/></svg>
+            <span class="text-sm font-medium">Historial</span>
+          </button>
+        </nav>
+      </aside>
+
+      <!-- ===== Columna de contenido ===== -->
+      <div class="flex min-w-0 flex-1 flex-col pb-24 lg:pb-0">
       <!-- Header -->
       <header class="sticky top-0 z-20 flex items-center justify-between border-b border-ink/10 bg-white px-4 py-3">
         <div class="flex items-center gap-2">
-          <span class="flex h-8 w-8 items-center justify-center rounded-lg bg-brand text-white">
+          <span class="flex h-8 w-8 items-center justify-center rounded-lg bg-brand text-white lg:hidden">
             <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
               <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" stroke-linecap="round" stroke-linejoin="round"></path>
             </svg>
@@ -120,7 +159,74 @@
         </button>
       </header>
 
-      <main class="px-4 py-4">
+      <main class="mx-auto w-full max-w-2xl px-4 py-4 lg:max-w-5xl lg:px-8 lg:py-8">
+        <!-- ====== TAB: CAJA (POS) ====== -->
+        <section id="tab-pos" class="tab-panel">
+          <div class="lg:grid lg:grid-cols-3 lg:gap-6">
+
+            <!-- Columna: carrito -->
+            <div class="lg:col-span-2">
+              <div class="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-ink/10 lg:p-5">
+                <h2 class="text-base font-semibold text-ink">Nueva venta</h2>
+                <p class="mt-1 text-sm text-ink/50">Escaneá los productos para sumarlos al ticket.</p>
+
+                <div class="mt-4 flex items-center gap-2">
+                  <div class="relative flex-1">
+                    <svg class="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-ink/40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10v4M10 10v4M14 10v4M18 10v4"/></svg>
+                    <input id="pos-scan-input" type="text" inputmode="numeric" autocomplete="off" autocapitalize="off" spellcheck="false"
+                      placeholder="Escaneá o escribí un código…"
+                      class="h-12 w-full rounded-xl border-ink/15 pl-10 font-mono text-lg focus:border-brand focus:ring-brand" />
+                  </div>
+                  <button id="pos-add-btn"
+                    class="h-12 shrink-0 rounded-xl bg-brand px-5 font-semibold text-white shadow-sm transition active:scale-[0.98] hover:bg-brand-dark">
+                    Agregar
+                  </button>
+                </div>
+
+                <ul id="pos-cart" class="mt-4 space-y-2"></ul>
+                <p id="pos-empty" class="py-10 text-center text-sm text-ink/40">El ticket está vacío. Escaneá un producto para empezar.</p>
+              </div>
+            </div>
+
+            <!-- Columna: cobro -->
+            <div class="mt-4 lg:mt-0">
+              <div class="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-ink/10 lg:sticky lg:top-8 lg:p-5">
+                <div class="flex items-center justify-between text-sm text-ink/60">
+                  <span>Artículos</span>
+                  <span id="pos-count" class="font-semibold text-ink">0</span>
+                </div>
+                <div class="mt-2 flex items-end justify-between border-t border-ink/10 pt-3">
+                  <span class="text-sm font-medium text-ink/60">Total</span>
+                  <span id="pos-total" class="text-3xl font-bold text-ink">$0</span>
+                </div>
+
+                <p class="mt-5 mb-2 text-sm font-medium text-ink/80">Método de pago</p>
+                <div id="pos-methods" class="grid grid-cols-2 gap-2"></div>
+
+                <!-- Efectivo: paga con / vuelto -->
+                <div id="pos-cash" class="mt-3 hidden">
+                  <label for="pos-cash-given" class="mb-1 block text-sm font-medium text-ink/80">Paga con</label>
+                  <input id="pos-cash-given" type="number" inputmode="decimal" min="0" step="0.01" placeholder="0"
+                    class="w-full rounded-xl border-ink/15 text-base focus:border-brand focus:ring-brand" />
+                  <div class="mt-2 flex items-center justify-between rounded-xl bg-brand-sky/25 px-3 py-2 text-sm">
+                    <span class="font-medium text-brand">Vuelto</span>
+                    <span id="pos-change" class="font-bold text-brand">$0</span>
+                  </div>
+                </div>
+
+                <button id="pos-charge-btn" disabled
+                  class="mt-5 w-full rounded-xl bg-brand px-4 py-3.5 text-base font-semibold text-white shadow-sm transition active:scale-[0.98] hover:bg-brand-dark disabled:opacity-40">
+                  Cobrar
+                </button>
+                <button id="pos-clear-btn"
+                  class="mt-2 w-full rounded-xl py-2.5 text-sm font-medium text-ink/50 transition hover:bg-paper">
+                  Vaciar ticket
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+
         <!-- ====== TAB: ESCÁNER (lector USB) ====== -->
         <section id="tab-scan" class="tab-panel">
           <div class="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-ink/10">
@@ -205,7 +311,29 @@
 
         <!-- ====== TAB: REPORTES ====== -->
         <section id="tab-reports" class="tab-panel hidden">
-          <h2 class="text-base font-semibold text-ink">Resumen de inventario</h2>
+          <h2 class="text-base font-semibold text-ink">Ventas de hoy</h2>
+          <p class="mt-1 text-sm text-ink/50">Lo cobrado en la caja durante el día.</p>
+
+          <div class="mt-4 grid grid-cols-3 gap-2">
+            <div class="rounded-2xl border border-brand/30 bg-brand-sky/25 p-3 text-center shadow-sm">
+              <p class="text-[11px] font-medium uppercase tracking-wide text-brand">Total</p>
+              <p id="rep-sales-total" class="mt-0.5 text-base font-bold text-brand">$0</p>
+            </div>
+            <div class="rounded-2xl bg-white p-3 text-center shadow-sm ring-1 ring-ink/10">
+              <p class="text-[11px] font-medium uppercase tracking-wide text-ink/40">Ventas</p>
+              <p id="rep-sales-count" class="mt-0.5 text-base font-bold text-ink">0</p>
+            </div>
+            <div class="rounded-2xl bg-white p-3 text-center shadow-sm ring-1 ring-ink/10">
+              <p class="text-[11px] font-medium uppercase tracking-wide text-ink/40">Ticket prom.</p>
+              <p id="rep-sales-avg" class="mt-0.5 text-base font-bold text-ink">$0</p>
+            </div>
+          </div>
+
+          <h3 class="mt-5 text-sm font-semibold uppercase tracking-wide text-ink/50">Por método de pago</h3>
+          <ul id="rep-methods" class="mt-2 space-y-2"></ul>
+          <p id="rep-methods-empty" class="hidden rounded-xl bg-white px-4 py-6 text-center text-sm text-ink/40 ring-1 ring-ink/10">Todavía no hay ventas hoy.</p>
+
+          <h2 class="mt-8 text-base font-semibold text-ink">Resumen de inventario</h2>
           <p class="mt-1 text-sm text-ink/50">Una foto del estado actual de tu negocio.</p>
 
           <!-- Tarjetas de valor -->
@@ -278,25 +406,31 @@
           <p id="history-empty" class="hidden py-12 text-center text-sm text-ink/40">Aún no hay movimientos registrados hoy.</p>
         </section>
       </main>
+      </div><!-- /columna de contenido -->
+     </div><!-- /wrapper notebook -->
 
-      <!-- Bottom nav -->
-      <nav class="fixed inset-x-0 bottom-0 z-20 border-t border-ink/10 bg-white">
-        <div class="mx-auto grid max-w-lg grid-cols-4">
+      <!-- Bottom nav (celular) -->
+      <nav class="fixed inset-x-0 bottom-0 z-20 border-t border-ink/10 bg-white lg:hidden">
+        <div class="mx-auto grid max-w-2xl grid-cols-5">
+          <button data-tab="tab-pos" class="nav-btn flex flex-col items-center gap-1 py-2.5 text-brand">
+            <svg class="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="21" r="1"/><circle cx="19" cy="21" r="1"/><path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12"/></svg>
+            <span class="text-[11px] font-medium">Caja</span>
+          </button>
           <button data-tab="tab-scan" class="nav-btn flex flex-col items-center gap-1 py-2.5 text-brand">
             <svg class="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5v14M7 5v14M11 5v14M14 5v14M18 5v14M21 5v14"/></svg>
-            <span class="text-xs font-medium">Escanear</span>
+            <span class="text-[11px] font-medium">Escanear</span>
           </button>
           <button data-tab="tab-inventory" class="nav-btn flex flex-col items-center gap-1 py-2.5 text-ink/40">
             <svg class="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 7h-9M14 17H5M17 17a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM7 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/></svg>
-            <span class="text-xs font-medium">Inventario</span>
+            <span class="text-[11px] font-medium">Inventario</span>
           </button>
           <button data-tab="tab-reports" class="nav-btn flex flex-col items-center gap-1 py-2.5 text-ink/40">
             <svg class="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><rect x="7" y="11" width="3" height="6"/><rect x="12" y="7" width="3" height="10"/><rect x="17" y="13" width="3" height="4"/></svg>
-            <span class="text-xs font-medium">Reportes</span>
+            <span class="text-[11px] font-medium">Reportes</span>
           </button>
           <button data-tab="tab-history" class="nav-btn flex flex-col items-center gap-1 py-2.5 text-ink/40">
             <svg class="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/></svg>
-            <span class="text-xs font-medium">Historial</span>
+            <span class="text-[11px] font-medium">Historial</span>
           </button>
         </div>
       </nav>
