@@ -63,3 +63,8 @@
 }
 
 /* (Las reglas del visor de cámara se eliminaron: ahora se usa lector USB) */
+
+/* Resaltado del ítem activo en la barra lateral (notebook) */
+.nav-side.nav-active {
+  background: rgba(7, 57, 60, 0.07);
+}
