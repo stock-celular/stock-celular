@@ -25,7 +25,7 @@ let pendingProduct = null; // producto seleccionado para operación rápida
 let editingCode = null; // código en edición en el formulario
 let syncing = false;
 
-const scanner = new BarcodeScanner("scanner-container");
+const scanner = new BarcodeScanner({ onScan: (code) => handleScannedCode(code) });
 
 // Se cargan dinámicamente solo si Firebase está configurado
 let authApi, usersApi, productsApi, movementsApi;
@@ -96,6 +96,8 @@ async function showApp() {
   renderReports();
   renderHistory(todayMovements);
   switchTab("tab-inventory");
+
+  scanner.start(); // empieza a escuchar el lector USB
 }
 
 // ============================================================
@@ -216,50 +218,34 @@ function switchTab(tabId) {
   $("#header-title").textContent = TAB_TITLES[tabId] || "Inventario";
 
   if (tabId === "tab-reports") renderReports();
-  if (tabId !== "tab-scan") stopScanner();
+  if (tabId === "tab-scan") focusScanInput();
 }
 
 // ============================================================
-//  Escáner
+//  Lectura del código (lector USB tipo teclado)
 // ============================================================
-async function startScanner() {
-  $("#scanner-placeholder").classList.add("hidden");
-  $("#scan-start-btn").classList.add("hidden");
-  const stopBtn = $("#scan-stop-btn");
-  stopBtn.classList.remove("hidden");
-  stopBtn.classList.add("flex");
-
-  await scanner.start(
-    (code) => handleScannedCode(code),
-    (errMsg) => {
-      showToast(errMsg, "error");
-      resetScannerUI();
-    }
-  );
+// Coloca el cursor en el campo de escaneo (en la pestaña Escanear).
+function focusScanInput() {
+  const el = $("#scan-input");
+  if (el && !anyModalOpen()) {
+    el.value = "";
+    el.focus();
+  }
 }
 
-async function stopScanner() {
-  await scanner.stop();
-  resetScannerUI();
-}
-
-function resetScannerUI() {
-  $("#scanner-placeholder").classList.remove("hidden");
-  $("#scan-start-btn").classList.remove("hidden");
-  const stopBtn = $("#scan-stop-btn");
-  stopBtn.classList.add("hidden");
-  stopBtn.classList.remove("flex");
+function anyModalOpen() {
+  return !!document.querySelector(".modal:not(.hidden)");
 }
 
 let lastScan = { code: null, time: 0 };
-async function handleScannedCode(code) {
+function handleScannedCode(code) {
+  if (!code) return;
+  // No procesar mientras hay un modal abierto (evita lecturas encimadas)
+  if (anyModalOpen()) return;
+  // Anti-rebote: ignora el mismo código repetido en menos de 1.2 s
   const now = Date.now();
-  if (code === lastScan.code && now - lastScan.time < 2500) return;
+  if (code === lastScan.code && now - lastScan.time < 1200) return;
   lastScan = { code, time: now };
-
-  if (navigator.vibrate) navigator.vibrate(120);
-
-  await stopScanner();
   lookupCode(code);
 }
 
@@ -669,10 +655,21 @@ function openModal(id) {
 function closeModal(id) {
   $(`#${id}`).classList.add("hidden");
   document.body.style.overflow = "";
+  maybeRefocusScan();
 }
 function closeAllModals() {
   $$(".modal").forEach((m) => m.classList.add("hidden"));
   document.body.style.overflow = "";
+  maybeRefocusScan();
+}
+
+// Si quedamos en la pestaña Escanear, vuelve a enfocar el campo para
+// poder disparar el lector enseguida.
+function maybeRefocusScan() {
+  const scanPanel = $("#tab-scan");
+  if (scanPanel && !scanPanel.classList.contains("hidden")) {
+    setTimeout(focusScanInput, 50);
+  }
 }
 
 let toastTimer = null;
@@ -730,12 +727,20 @@ function bindEvents() {
     b.addEventListener("click", () => switchTab(b.dataset.tab))
   );
 
-  $("#scan-start-btn").addEventListener("click", startScanner);
-  $("#scan-stop-btn").addEventListener("click", stopScanner);
-  $("#manual-entry-btn").addEventListener("click", () => {
-    const code = prompt("Ingresa el número del código de barras:");
-    if (code && code.trim()) lookupCode(code.trim());
+  // Campo de escaneo (lector USB o tipeo manual)
+  const scanInput = $("#scan-input");
+  const submitScan = () => {
+    const code = scanInput.value.trim();
+    scanInput.value = "";
+    if (code) handleScannedCode(code);
+  };
+  scanInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      submitScan();
+    }
   });
+  $("#scan-go-btn").addEventListener("click", submitScan);
 
   $("#add-product-btn").addEventListener("click", () => openProductForm());
   $("#inventory-search").addEventListener("input", renderInventory);
