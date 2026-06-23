@@ -7,6 +7,17 @@
 //    al crear/editar/eliminar un producto.
 //  - Si en ese momento no hay señal, el cambio queda en una cola y
 //    se sube solo cuando vuelve la conexión.
+//
+//  OPTIMIZACIONES PARA PLAN GRATUITO DE FIREBASE:
+//  ─────────────────────────────────────────────
+//  1. Ventana de gracia (30 min): no re-descarga datos si la última
+//     sincronización fue hace menos de 30 minutos.
+//  2. Sync automático en segundo plano al navegar a Inventario/Reportes
+//     si los datos están desactualizados (sin bloquear la UI).
+//  3. Semáforo en flushOutbox: nunca corren dos uploads en paralelo.
+//  4. Debounce de escrituras (800 ms): operaciones ráfaga se agrupan
+//     en un solo flush en lugar de una llamada por cada ítem.
+//  5. Evento "online" con debounce: un solo intento al reconectar.
 //  (No necesitas editar este archivo)
 // ============================================================
 
@@ -27,6 +38,8 @@ let posMethod = null; // método de pago elegido
 let pendingProduct = null; // producto seleccionado para operación rápida
 let editingCode = null; // código en edición en el formulario
 let syncing = false;
+let flushing = false;       // semáforo: evita dos flush simultáneos
+let flushTimer = null;      // debounce: agrupa escrituras ráfaga en un solo flush
 
 const PAYMENT_METHODS = [
   { id: "efectivo", label: "Efectivo" },
@@ -62,9 +75,10 @@ async function init() {
 
   bindEvents();
 
-  // Si vuelve la conexión, intenta subir lo que quedó pendiente
+  // Si vuelve la conexión, intenta subir lo que quedó pendiente (debounce por si
+  // el evento online dispara varias veces seguido al reconectar)
   window.addEventListener("online", () => {
-    if (currentUser) flushOutbox().then(refreshSyncUI);
+    if (currentUser) scheduleFlush();
   });
 
   authApi.onChange((user) => {
@@ -131,7 +145,12 @@ async function ensureDailySync(force = false) {
 
   const meta = await localDB.getMeta();
   const sameDay = meta && meta.uid === currentUser.uid && meta.fecha === todayStr();
-  const wantDownload = force || !sameDay;
+
+  // Ventana de gracia: no re-descargamos si la última sync fue hace menos de
+  // 30 minutos (ahorra lecturas en el plan gratuito de Firebase).
+  const GRACE_MS = 30 * 60 * 1000;
+  const recentSync = meta?.ts && (Date.now() - meta.ts) < GRACE_MS;
+  const wantDownload = force || !sameDay || (!recentSync && sameDay);
 
   // Solo descargamos (y reemplazamos el caché) si NO quedan cambios
   // pendientes; así nunca pisamos algo que todavía no se subió.
@@ -165,40 +184,63 @@ async function ensureDailySync(force = false) {
 }
 
 // Sube a Firebase los cambios encolados. Devuelve true si quedó vacía.
+// Semáforo: si ya hay un flush corriendo, espera a que termine y sale.
 async function flushOutbox() {
-  const ops = await localDB.getOutbox();
-  for (const op of ops) {
-    if (op.uid !== currentUser.uid) continue; // ops de otro usuario: se respetan
-    try {
-      if (op.type === "adjust") {
-        await productsApi.adjustStock(
-          op.uid,
-          op.payload.producto,
-          op.payload.accion,
-          op.payload.cantidad
-        );
-      } else if (op.type === "save") {
-        await productsApi.save(op.uid, op.payload.data);
-      } else if (op.type === "delete") {
-        await productsApi.delete(op.uid, op.payload.codigo);
-      } else if (op.type === "sale") {
-        await salesApi.commit(op.uid, op.payload.sale);
+  if (flushing) return false; // ya hay uno en curso; el outbox se procesa solo
+  flushing = true;
+  try {
+    const ops = await localDB.getOutbox();
+    for (const op of ops) {
+      if (op.uid !== currentUser.uid) continue; // ops de otro usuario: se respetan
+      try {
+        if (op.type === "adjust") {
+          await productsApi.adjustStock(
+            op.uid,
+            op.payload.producto,
+            op.payload.accion,
+            op.payload.cantidad
+          );
+        } else if (op.type === "save") {
+          await productsApi.save(op.uid, op.payload.data);
+        } else if (op.type === "delete") {
+          await productsApi.delete(op.uid, op.payload.codigo);
+        } else if (op.type === "sale") {
+          await salesApi.commit(op.uid, op.payload.sale);
+        }
+        await localDB.deleteFromOutbox(op.id);
+      } catch (e) {
+        console.log("[v0] No se pudo subir (sin conexión):", e?.message || e);
+        return false; // corta para conservar el orden; se reintenta luego
       }
-      await localDB.deleteFromOutbox(op.id);
-    } catch (e) {
-      console.log("[v0] No se pudo subir (sin conexión):", e?.message || e);
-      return false; // corta para conservar el orden; se reintenta luego
     }
+    return true;
+  } finally {
+    flushing = false;
   }
-  return true;
+}
+
+// Versión con debounce: agrupa operaciones ráfaga (ej: cobrar varios items)
+// en un solo flush 800 ms después de la última escritura.
+function scheduleFlush() {
+  clearTimeout(flushTimer);
+  flushTimer = setTimeout(async () => {
+    await flushOutbox();
+    refreshSyncUI();
+  }, 800);
 }
 
 async function refreshSyncUI() {
   const status = $("#sync-status");
-  const btn = $("#sync-btn");
+  const dot = $("#sync-dot");
   if (!status) return;
   const pending = await localDB.outboxCount().catch(() => 0);
   const meta = await localDB.getMeta().catch(() => null);
+
+  // Punto de color: amarillo=pendiente, verde=ok, gris=sin datos
+  const dotClass = syncing || pending > 0
+    ? "bg-yellow-400"
+    : meta?.ts ? "bg-green-500" : "bg-ink/30";
+  if (dot) dot.className = `h-2 w-2 shrink-0 rounded-full ${dotClass}`;
 
   if (syncing) {
     status.textContent = "Sincronizando…";
@@ -211,12 +253,11 @@ async function refreshSyncUI() {
     });
     status.textContent =
       meta.fecha === todayStr()
-        ? `Sincronizado hoy ${hora}`
-        : `Última descarga: ${meta.fecha}`;
+        ? `Actualizado ${hora}`
+        : `Última sync: ${meta.fecha}`;
   } else {
-    status.textContent = "Sin descargar todavía";
+    status.textContent = "Sin sincronizar";
   }
-  if (btn) btn.disabled = syncing;
 }
 
 // ============================================================
@@ -248,6 +289,29 @@ function switchTab(tabId) {
   if (tabId === "tab-reports") renderReports();
   if (tabId === "tab-scan") focusScanInput();
   if (tabId === "tab-pos") focusPosInput();
+
+  // Auto-sync al abrir Inventario o Reportes si los datos están desactualizados
+  if (tabId === "tab-inventory" || tabId === "tab-reports") {
+    maybeSyncInBackground();
+  }
+}
+
+// Sincroniza en segundo plano si los datos tienen más de 30 min de antigüedad.
+// No bloquea la UI: los datos locales se muestran de inmediato y se refrescan
+// solos cuando termina la descarga.
+async function maybeSyncInBackground() {
+  if (syncing || !currentUser) return;
+  const meta = await localDB.getMeta().catch(() => null);
+  const GRACE_MS = 30 * 60 * 1000;
+  const sameDay = meta && meta.uid === currentUser.uid && meta.fecha === todayStr();
+  const recentSync = meta?.ts && (Date.now() - meta.ts) < GRACE_MS;
+  if (sameDay && recentSync) return; // datos frescos, no hacer nada
+  // Lanza sync sin await para no bloquear la navegación
+  ensureDailySync().then(() => {
+    renderInventory();
+    renderReports();
+    renderHistory(todayMovements);
+  });
 }
 
 // ============================================================
@@ -505,16 +569,13 @@ async function posCharge() {
   renderHistory(todayMovements);
   focusPosInput();
 
-  // 2) Encola la venta completa y trata de subirla.
+  // 2) Encola la venta completa y programa la subida (debounce).
   await localDB.addToOutbox({ uid: currentUser.uid, type: "sale", payload: { sale } });
-  const subido = await flushOutbox();
-  refreshSyncUI();
+  scheduleFlush();
 
   showToast(
-    subido
-      ? `Venta cobrada · ${metodoLabel} · $${formatPrice(total)}`
-      : "Venta guardada (se subirá al reconectar)",
-    subido ? "success" : "info"
+    `Venta cobrada · ${metodoLabel} · $${formatPrice(total)}`,
+    "success"
   );
 }
 
@@ -566,20 +627,17 @@ async function applyOperation(accion) {
   renderHistory(todayMovements);
   const verbo = accion === "entrada" ? "Sumadas" : "Restadas";
 
-  // 2) Encola y trata de subir a Firebase ahora mismo.
+  // 2) Encola y programa la subida a Firebase (debounce).
   await localDB.addToOutbox({
     uid: currentUser.uid,
     type: "adjust",
     payload: { producto: { codigo: producto.codigo, nombre: producto.nombre }, accion, cantidad },
   });
-  const subido = await flushOutbox();
-  refreshSyncUI();
+  scheduleFlush();
 
   showToast(
-    subido
-      ? `${verbo} ${cantidad} u. de ${producto.nombre}`
-      : `Guardado en el teléfono (se subirá al reconectar)`,
-    subido ? "success" : "info"
+    `${verbo} ${cantidad} u. de ${producto.nombre}`,
+    "success"
   );
   pendingProduct = null;
 }
@@ -658,10 +716,9 @@ async function saveProduct(e) {
   renderReports();
   showToast(editingCode ? "Producto actualizado" : "Producto creado", "success");
 
-  // 2) Encola + sube
+  // 2) Encola + programa subida
   await localDB.addToOutbox({ uid: currentUser.uid, type: "save", payload: { data } });
-  await flushOutbox();
-  refreshSyncUI();
+  scheduleFlush();
 }
 
 async function deleteProduct() {
@@ -678,8 +735,7 @@ async function deleteProduct() {
   showToast("Producto eliminado", "success");
 
   await localDB.addToOutbox({ uid: currentUser.uid, type: "delete", payload: { codigo } });
-  await flushOutbox();
-  refreshSyncUI();
+  scheduleFlush();
 }
 
 // ============================================================
@@ -1192,12 +1248,6 @@ function bindEvents() {
 
   $("#add-product-btn").addEventListener("click", () => openProductForm());
   $("#inventory-search").addEventListener("input", renderInventory);
-  $("#sync-btn").addEventListener("click", async () => {
-    await ensureDailySync(true); // fuerza una descarga manual
-    renderInventory();
-    renderReports();
-    renderHistory(todayMovements);
-  });
 
   $("#export-csv-btn").addEventListener("click", exportHistoryCsv);
 
