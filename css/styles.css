@@ -62,19 +62,4 @@
   }
 }
 
-/* El video del escáner ocupa el contenedor de forma limpia */
-#scanner-container video {
-  border-radius: 0.75rem;
-  width: 100% !important;
-  display: block;
-}
-
-#scanner-container:empty {
-  display: none;
-}
-
-/* Oculta el texto/imagen por defecto que inyecta html5-qrcode */
-#scanner-container img[alt="Info icon"],
-#scanner-container__dashboard_section_csr span {
-  display: none;
-}
+/* (Las reglas del visor de cámara se eliminaron: ahora se usa lector USB) */
