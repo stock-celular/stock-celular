@@ -1,25 +1,25 @@
 /* =============================================
    PALETA DE COLORES
-   --color-1: #1f3a1c  (verde muy oscuro)
-   --color-2: #3a582c  (verde oscuro)
-   --color-3: #648643  (verde medio)
-   --color-4: #9ebf64  (verde claro)
-   --color-5: #f1fd94  (lima / amarillo-verde)
+   --color-1: #060606  (negro)
+   --color-2: #252531  (azul-gris muy oscuro)
+   --color-3: #576179  (azul-gris medio)
+   --color-4: #979fc5  (azul-gris claro)
+   --color-5: #d5deea  (azul muy pálido)
    ============================================= */
 
 :root {
-  --color-1: #1f3a1c;
-  --color-2: #3a582c;
-  --color-3: #648643;
-  --color-4: #9ebf64;
-  --color-5: #f1fd94;
+  --color-1: #060606;
+  --color-2: #252531;
+  --color-3: #576179;
+  --color-4: #979fc5;
+  --color-5: #d5deea;
 
   /* Aliases semánticos */
-  --color-bg:           #f7faf2;          /* fondo general: blanco con toque verde */
+  --color-bg:           #f0f3f8;          /* fondo general: azul muy suave */
   --color-surface:      #ffffff;          /* superficies (cards, modales) */
-  --color-border:       #d4e8b0;          /* bordes suaves */
+  --color-border:       var(--color-5);   /* bordes suaves */
   --color-text-primary: var(--color-1);   /* texto principal */
-  --color-text-muted:   var(--color-2);   /* texto secundario */
+  --color-text-muted:   var(--color-3);   /* texto secundario */
   --color-accent:       var(--color-3);   /* botones, links */
   --color-accent-light: var(--color-4);   /* hover, badges */
   --color-highlight:    var(--color-5);   /* chips, etiquetas destacadas */
@@ -44,7 +44,7 @@
 .modal-backdrop {
   position: absolute;
   inset: 0;
-  background: rgba(31, 58, 28, 0.45);   /* --color-1 con opacidad */
+  background: rgba(6, 6, 6, 0.5);        /* --color-1 con opacidad */
   animation: fade-in 0.15s ease-out;
 }
 
@@ -58,7 +58,7 @@
   border-top-right-radius: 1.25rem;
   padding: 1.25rem;
   padding-bottom: calc(1.25rem + env(safe-area-inset-bottom, 0px));
-  box-shadow: 0 -8px 30px rgba(31, 58, 28, 0.12);
+  box-shadow: 0 -8px 30px rgba(37, 37, 49, 0.12);
   animation: slide-up 0.2s ease-out;
 }
 
@@ -101,9 +101,9 @@
 
 /* ─── Barra lateral: ítem activo ─── */
 .nav-side.nav-active {
-  background: rgba(100, 134, 67, 0.10);  /* --color-3 suavizado */
+  background: rgba(151, 159, 197, 0.12);  /* --color-4 suavizado */
   border-left: 3px solid var(--color-3);
-  color: var(--color-1);
+  color: var(--color-2);
 }
 
 /* ─── Clases de color de la paleta (utilidades) ─── */
