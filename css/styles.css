@@ -1,6 +1,33 @@
+/* =============================================
+   PALETA DE COLORES
+   --color-1: #1f3a1c  (verde muy oscuro)
+   --color-2: #3a582c  (verde oscuro)
+   --color-3: #648643  (verde medio)
+   --color-4: #9ebf64  (verde claro)
+   --color-5: #f1fd94  (lima / amarillo-verde)
+   ============================================= */
+
+:root {
+  --color-1: #1f3a1c;
+  --color-2: #3a582c;
+  --color-3: #648643;
+  --color-4: #9ebf64;
+  --color-5: #f1fd94;
+
+  /* Aliases semánticos */
+  --color-bg:           #f7faf2;          /* fondo general: blanco con toque verde */
+  --color-surface:      #ffffff;          /* superficies (cards, modales) */
+  --color-border:       #d4e8b0;          /* bordes suaves */
+  --color-text-primary: var(--color-1);   /* texto principal */
+  --color-text-muted:   var(--color-2);   /* texto secundario */
+  --color-accent:       var(--color-3);   /* botones, links */
+  --color-accent-light: var(--color-4);   /* hover, badges */
+  --color-highlight:    var(--color-5);   /* chips, etiquetas destacadas */
+}
+
 /* Estilos complementarios a Tailwind */
 
-/* Modales tipo "bottom sheet" en móvil */
+/* ─── Modales tipo "bottom sheet" en móvil ─── */
 .modal {
   position: fixed;
   inset: 0;
@@ -17,7 +44,7 @@
 .modal-backdrop {
   position: absolute;
   inset: 0;
-  background: rgba(15, 23, 42, 0.5);
+  background: rgba(31, 58, 28, 0.45);   /* --color-1 con opacidad */
   animation: fade-in 0.15s ease-out;
 }
 
@@ -25,13 +52,25 @@
   position: relative;
   width: 100%;
   max-width: 32rem;
-  background: #fff;
+  background: var(--color-surface);
+  border-top: 3px solid var(--color-4);
   border-top-left-radius: 1.25rem;
   border-top-right-radius: 1.25rem;
   padding: 1.25rem;
   padding-bottom: calc(1.25rem + env(safe-area-inset-bottom, 0px));
-  box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 -8px 30px rgba(31, 58, 28, 0.12);
   animation: slide-up 0.2s ease-out;
+}
+
+/* Tirador decorativo del sheet */
+.modal-sheet::before {
+  content: '';
+  display: block;
+  width: 2.5rem;
+  height: 4px;
+  border-radius: 9999px;
+  background: var(--color-border);
+  margin: 0 auto 1rem;
 }
 
 @media (min-width: 640px) {
@@ -40,31 +79,42 @@
   }
   .modal-sheet {
     border-radius: 1.25rem;
+    border-top: none;
+    border: 1px solid var(--color-border);
     margin: 1rem;
+  }
+  .modal-sheet::before {
+    display: none;
   }
 }
 
+/* ─── Animaciones ─── */
 @keyframes slide-up {
-  from {
-    transform: translateY(100%);
-  }
-  to {
-    transform: translateY(0);
-  }
+  from { transform: translateY(100%); }
+  to   { transform: translateY(0);    }
 }
 
 @keyframes fade-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
 
-/* (Las reglas del visor de cámara se eliminaron: ahora se usa lector USB) */
-
-/* Resaltado del ítem activo en la barra lateral (notebook) */
+/* ─── Barra lateral: ítem activo ─── */
 .nav-side.nav-active {
-  background: rgba(7, 57, 60, 0.07);
+  background: rgba(100, 134, 67, 0.10);  /* --color-3 suavizado */
+  border-left: 3px solid var(--color-3);
+  color: var(--color-1);
 }
+
+/* ─── Clases de color de la paleta (utilidades) ─── */
+.color1 { color: var(--color-1); }
+.color2 { color: var(--color-2); }
+.color3 { color: var(--color-3); }
+.color4 { color: var(--color-4); }
+.color5 { color: var(--color-5); }
+
+.bg-color1 { background-color: var(--color-1); }
+.bg-color2 { background-color: var(--color-2); }
+.bg-color3 { background-color: var(--color-3); }
+.bg-color4 { background-color: var(--color-4); }
+.bg-color5 { background-color: var(--color-5); }
