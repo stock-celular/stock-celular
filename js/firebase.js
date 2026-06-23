@@ -60,6 +60,9 @@ function productDoc(uid, codigo) {
 function movementsCol(uid) {
   return collection(db, "usuarios", uid, "movimientos");
 }
+function salesCol(uid) {
+  return collection(db, "usuarios", uid, "ventas");
+}
 
 // ---------- Perfil de usuario ----------
 export const usersApi = {
@@ -138,7 +141,56 @@ export const movementsApi = {
         nombre: data.nombre,
         accion: data.accion,
         cantidad: data.cantidad,
-        ts: fecha.getTime(), // para ordenar/mostrar sin depender de Firestore
+        ts: fecha.getTime(),
+      };
+    });
+  },
+};
+
+// ---------- Ventas (caja) ----------
+export const salesApi = {
+  // Cobra una venta completa: descuenta stock + registra movimientos de
+  // salida por cada ítem y guarda el comprobante de venta. Todo en línea.
+  async commit(uid, sale) {
+    for (const it of sale.items) {
+      await updateDoc(productDoc(uid, it.codigo), {
+        cantidad: increment(-it.cantidad),
+        actualizado: serverTimestamp(),
+      });
+      await addDoc(movementsCol(uid), {
+        codigo: it.codigo,
+        nombre: it.nombre,
+        accion: "salida",
+        cantidad: it.cantidad,
+        fecha: serverTimestamp(),
+      });
+    }
+    await addDoc(salesCol(uid), {
+      total: sale.total,
+      metodoPago: sale.metodoPago,
+      items: sale.items,
+      fecha: serverTimestamp(),
+    });
+  },
+
+  // Descarga las ventas de hoy una sola vez (al sincronizar el día).
+  async fetchToday(uid) {
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    const q = query(
+      salesCol(uid),
+      where("fecha", ">=", Timestamp.fromDate(start)),
+      orderBy("fecha", "desc")
+    );
+    const snap = await getDocs(q);
+    return snap.docs.map((d) => {
+      const data = d.data();
+      const fecha = data.fecha?.toDate ? data.fecha.toDate() : new Date();
+      return {
+        total: data.total || 0,
+        metodoPago: data.metodoPago || "otro",
+        items: data.items || [],
+        ts: fecha.getTime(),
       };
     });
   },
