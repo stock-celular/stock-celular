@@ -1,91 +1,79 @@
 // ============================================================
-//  Escáner de código de barras (envuelve html5-qrcode)
+//  Lector de código de barras USB (tipo teclado / HID)
+//  Compatible con lectores 2D USB como el 7100N: "teclean" el
+//  código muy rápido y terminan con Enter. Este módulo captura
+//  esa ráfaga de teclas en cualquier parte de la app.
 //  (No necesitas editar este archivo)
 // ============================================================
 
-const SUPPORTED_FORMATS = [
-  // Formatos típicos de productos de almacén
-  "EAN_13",
-  "EAN_8",
-  "UPC_A",
-  "UPC_E",
-  "CODE_128",
-  "CODE_39",
-  "ITF",
-];
-
 export class BarcodeScanner {
-  constructor(containerId) {
-    this.containerId = containerId;
-    this.instance = null;
-    this.running = false;
+  /**
+   * @param {object} opts
+   * @param {(code:string)=>void} opts.onScan  Se llama con el código leído.
+   * @param {number} [opts.minLength=3]   Largo mínimo para considerarlo válido.
+   * @param {string[]} [opts.endKeys]     Teclas que terminan la lectura.
+   * @param {number} [opts.interCharMs=60] Máx. ms entre teclas de una misma ráfaga.
+   */
+  constructor({ onScan, minLength = 3, endKeys = ["Enter", "Tab"], interCharMs = 60 } = {}) {
+    this.onScan = onScan;
+    this.minLength = minLength;
+    this.endKeys = endKeys;
+    this.interCharMs = interCharMs;
+    this.buffer = "";
+    this.lastTime = 0;
+    this.enabled = false;
+    this._onKey = this._onKey.bind(this);
   }
 
-  async start(onDetected, onError) {
-    if (this.running) return;
-
-    if (typeof Html5Qrcode === "undefined") {
-      onError?.("No se pudo cargar el escáner. Revisa tu conexión.");
-      return;
-    }
-
-    // Mapea los nombres de formato a los enums de la librería
-    const formats = SUPPORTED_FORMATS.map((f) => Html5QrcodeSupportedFormats[f]).filter(
-      (f) => f !== undefined
-    );
-
-    this.instance = new Html5Qrcode(this.containerId, {
-      formatsToSupport: formats,
-      verbose: false,
-    });
-
-    const config = {
-      fps: 10,
-      qrbox: { width: 250, height: 160 },
-      aspectRatio: 1.0,
-    };
-
-    try {
-      await this.instance.start(
-        { facingMode: "environment" }, // cámara trasera del celular
-        config,
-        (decodedText) => {
-          // Limpia espacios y caracteres no numéricos comunes
-          const code = decodedText.trim();
-          onDetected?.(code);
-        },
-        () => {
-          /* lecturas fallidas por frame: se ignoran silenciosamente */
-        }
-      );
-      this.running = true;
-    } catch (err) {
-      console.log("[v0] Error al iniciar cámara:", err?.message || err);
-      let msg = "No se pudo acceder a la cámara.";
-      if (String(err).includes("NotAllowedError") || String(err).includes("Permission")) {
-        msg = "Permiso de cámara denegado. Habilítalo en el navegador y reintenta.";
-      } else if (String(err).includes("NotFoundError")) {
-        msg = "No se encontró ninguna cámara en este dispositivo.";
-      } else if (location.protocol !== "https:" && location.hostname !== "localhost") {
-        msg = "La cámara requiere HTTPS. En GitHub Pages funcionará correctamente.";
-      }
-      onError?.(msg);
-    }
+  // Empieza a escuchar el teclado (el lector USB se comporta como uno).
+  start() {
+    if (this.enabled) return;
+    this.enabled = true;
+    document.addEventListener("keydown", this._onKey, true);
   }
 
-  async stop() {
-    if (!this.instance || !this.running) return;
-    try {
-      await this.instance.stop();
-      await this.instance.clear();
-    } catch (e) {
-      console.log("[v0] Error al detener escáner:", e?.message || e);
-    }
-    this.running = false;
-    this.instance = null;
+  stop() {
+    this.enabled = false;
+    document.removeEventListener("keydown", this._onKey, true);
+    this.buffer = "";
   }
 
   isRunning() {
-    return this.running;
+    return this.enabled;
+  }
+
+  // Si el foco está en un campo (búsqueda, formulario, el propio campo de
+  // escaneo…), dejamos que el navegador escriba normalmente y NO interceptamos.
+  _editableFocused() {
+    const el = document.activeElement;
+    if (!el) return false;
+    const tag = el.tagName;
+    return el.isContentEditable || tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
+  }
+
+  _onKey(e) {
+    if (!this.enabled) return;
+    if (this._editableFocused()) return; // hay un campo activo: no molestamos
+
+    const now = Date.now();
+    // Si pasó demasiado tiempo desde la última tecla, es tecleo humano:
+    // reiniciamos el buffer. El lector USB manda todo en milisegundos.
+    if (now - this.lastTime > this.interCharMs) this.buffer = "";
+    this.lastTime = now;
+
+    if (this.endKeys.includes(e.key)) {
+      const code = this.buffer.trim();
+      this.buffer = "";
+      if (code.length >= this.minLength) {
+        e.preventDefault();
+        this.onScan?.(code);
+      }
+      return;
+    }
+
+    // Acumula solo caracteres imprimibles (dígitos/letras del código)
+    if (e.key.length === 1) {
+      this.buffer += e.key;
+    }
   }
 }
