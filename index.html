@@ -32,9 +32,6 @@
       };
     </script>
 
-    <!-- Escáner de código de barras -->
-    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
-
     <link rel="stylesheet" href="./css/styles.css" />
   </head>
 
@@ -124,44 +121,34 @@
       </header>
 
       <main class="px-4 py-4">
-        <!-- ====== TAB: ESCÁNER ====== -->
+        <!-- ====== TAB: ESCÁNER (lector USB) ====== -->
         <section id="tab-scan" class="tab-panel">
           <div class="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-ink/10">
             <h2 class="text-base font-semibold text-ink">Escanear producto</h2>
-            <p class="mt-1 text-sm text-ink/50">Apunta la cámara al código de barras.</p>
+            <p class="mt-1 text-sm text-ink/50">Dispará el lector USB sobre el código. También podés escribirlo y presionar Enter.</p>
 
-            <div id="scanner-container" class="mt-4 overflow-hidden rounded-xl bg-ink"></div>
-            <div id="scanner-placeholder" class="mt-4 flex aspect-square w-full flex-col items-center justify-center rounded-xl border-2 border-dashed border-ink/20 bg-paper text-ink/40">
-              <svg class="h-12 w-12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-                <path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2" stroke-linecap="round" stroke-linejoin="round"></path>
-                <line x1="7" y1="12" x2="17" y2="12" stroke-linecap="round"></line>
-              </svg>
-              <p class="mt-2 text-sm">Cámara apagada</p>
+            <div class="mt-4 flex items-center gap-2 rounded-xl bg-paper px-3 py-2.5 text-sm text-ink/70">
+              <span class="flex h-2.5 w-2.5 shrink-0 rounded-full bg-brand"></span>
+              Lector listo — escaneá cuando quieras
             </div>
 
-            <div class="mt-4 grid grid-cols-2 gap-3">
-              <button id="scan-start-btn"
-                class="col-span-2 flex items-center justify-center gap-2 rounded-xl bg-brand px-4 py-3 font-semibold text-white shadow-sm transition active:scale-[0.98] hover:bg-brand-dark">
-                <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="13" r="4"/></svg>
-                Activar cámara
-              </button>
-              <button id="scan-stop-btn"
-                class="col-span-2 hidden items-center justify-center gap-2 rounded-xl bg-ink/10 px-4 py-3 font-semibold text-ink transition active:scale-[0.98] hover:bg-ink/15">
-                Detener cámara
+            <label for="scan-input" class="mb-1 mt-4 block text-sm font-medium text-ink/80">Código de barra</label>
+            <div class="flex items-center gap-2">
+              <div class="relative flex-1">
+                <svg class="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-ink/40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10v4M10 10v4M14 10v4M18 10v4"/></svg>
+                <input id="scan-input" type="text" inputmode="numeric" autocomplete="off" autocapitalize="off" spellcheck="false"
+                  placeholder="Escaneá o escribí el código…"
+                  class="h-12 w-full rounded-xl border-ink/15 pl-10 font-mono text-lg focus:border-brand focus:ring-brand" />
+              </div>
+              <button id="scan-go-btn"
+                class="h-12 shrink-0 rounded-xl bg-brand px-5 font-semibold text-white shadow-sm transition active:scale-[0.98] hover:bg-brand-dark">
+                Buscar
               </button>
             </div>
 
-            <div class="mt-3 flex items-center gap-3">
-              <div class="h-px flex-1 bg-ink/10"></div>
-              <span class="text-xs font-medium uppercase text-ink/40">o</span>
-              <div class="h-px flex-1 bg-ink/10"></div>
-            </div>
-
-            <button id="manual-entry-btn"
-              class="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-ink/15 px-4 py-3 font-semibold text-ink/80 transition active:scale-[0.98] hover:bg-paper">
-              <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10v4M10 10v4M14 10v4M18 10v4"/></svg>
-              Ingresar código manualmente
-            </button>
+            <p class="mt-3 text-xs text-ink/40">
+              Compatible con lectores USB tipo teclado (2D 7100N y similares). Dejá esta pantalla abierta para escanear varios productos seguidos.
+            </p>
           </div>
         </section>
 
@@ -296,7 +283,7 @@
       <nav class="fixed inset-x-0 bottom-0 z-20 border-t border-ink/10 bg-white">
         <div class="mx-auto grid max-w-lg grid-cols-4">
           <button data-tab="tab-scan" class="nav-btn flex flex-col items-center gap-1 py-2.5 text-brand">
-            <svg class="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="13" r="4"/></svg>
+            <svg class="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5v14M7 5v14M11 5v14M14 5v14M18 5v14M21 5v14"/></svg>
             <span class="text-xs font-medium">Escanear</span>
           </button>
           <button data-tab="tab-inventory" class="nav-btn flex flex-col items-center gap-1 py-2.5 text-ink/40">
