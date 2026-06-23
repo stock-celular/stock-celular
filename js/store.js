@@ -7,10 +7,11 @@
 // ============================================================
 
 const DB_NAME = "stock-barrio";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORES = {
   productos: { keyPath: "codigo" },
   movimientos: { keyPath: "id", autoIncrement: true },
+  ventas: { keyPath: "id", autoIncrement: true },
   meta: { keyPath: "key" },
   outbox: { keyPath: "id", autoIncrement: true },
 };
@@ -111,6 +112,28 @@ export const localDB = {
     return reqToPromise(
       db.transaction("movimientos", "readwrite").objectStore("movimientos").put(m)
     );
+  },
+
+  // ---------- Ventas del día (caja) ----------
+  async getTodaySales() {
+    const db = await openDB();
+    const all = await reqToPromise(db.transaction("ventas").objectStore("ventas").getAll());
+    return all.sort((a, b) => (b.ts || 0) - (a.ts || 0));
+  },
+  async replaceSales(list) {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const t = db.transaction("ventas", "readwrite");
+      const s = t.objectStore("ventas");
+      s.clear();
+      (list || []).forEach((v) => s.put(v));
+      t.oncomplete = () => resolve(true);
+      t.onerror = () => reject(t.error);
+    });
+  },
+  async addSale(v) {
+    const db = await openDB();
+    return reqToPromise(db.transaction("ventas", "readwrite").objectStore("ventas").put(v));
   },
 
   // ---------- Marca de sincronización ----------
