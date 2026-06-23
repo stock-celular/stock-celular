@@ -487,6 +487,7 @@ function posUpdateCash() {
   const given = parseFloat($("#pos-cash-given").value) || 0;
   const vuelto = given - cartTotal();
   $("#pos-change").textContent = "$" + formatPrice(vuelto > 0 ? vuelto : 0);
+  updateChargeButton();
 }
 
 // Atajo de efectivo: "exact" pone el total justo; un número pone ese billete.
@@ -500,8 +501,11 @@ function posSetCash(kind) {
 function updateChargeButton() {
   const btn = $("#pos-charge-btn");
   if (!btn) return;
-  btn.disabled = !(cart.length > 0 && !!posMethod);
-  btn.textContent = cart.length > 0 ? `Cobrar $${formatPrice(cartTotal())}` : "Cobrar";
+  const total = cartTotal();
+  const cashOk = posMethod !== "efectivo" ||
+    (parseFloat($("#pos-cash-given").value) || 0) >= total;
+  btn.disabled = !(cart.length > 0 && !!posMethod && cashOk);
+  btn.textContent = cart.length > 0 ? `Cobrar $${formatPrice(total)}` : "Cobrar";
 }
 
 function posClear() {
