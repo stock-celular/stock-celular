@@ -425,6 +425,14 @@ function posUpdateCash() {
   $("#pos-change").textContent = "$" + formatPrice(vuelto > 0 ? vuelto : 0);
 }
 
+// Atajo de efectivo: "exact" pone el total justo; un número pone ese billete.
+function posSetCash(kind) {
+  const input = $("#pos-cash-given");
+  if (!input) return;
+  input.value = kind === "exact" ? Math.round(cartTotal()) : parseInt(kind, 10) || 0;
+  posUpdateCash();
+}
+
 function updateChargeButton() {
   const btn = $("#pos-charge-btn");
   if (!btn) return;
@@ -904,6 +912,136 @@ function csvCell(value) {
   return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
+// ============================================================
+//  Exportar a Excel (.xlsx) — usa SheetJS (window.XLSX)
+// ============================================================
+function methodLabel(id) {
+  return PAYMENT_METHODS.find((m) => m.id === id)?.label || id || "Otro";
+}
+
+function excelReady() {
+  if (typeof XLSX === "undefined") {
+    showToast("No se pudo cargar Excel. Revisá tu conexión.", "error");
+    return false;
+  }
+  return true;
+}
+
+// Inventario actual → planilla con stock y valorización.
+function exportInventoryXlsx() {
+  if (!excelReady()) return;
+  if (!products.length) {
+    showToast("No hay productos para exportar", "error");
+    return;
+  }
+  const rows = products.map((p) => {
+    const cant = p.cantidad ?? 0;
+    const costo = Number(p.precioCosto) || 0;
+    const venta = Number(p.precioVenta) || 0;
+    return {
+      "Código": p.codigo,
+      "Nombre": p.nombre || "",
+      "Cantidad": cant,
+      "Stock mínimo": p.stockMinimo ?? 0,
+      "Precio costo": costo,
+      "Precio venta": venta,
+      "Valor costo": cant * costo,
+      "Valor venta": cant * venta,
+    };
+  });
+  const ws = XLSX.utils.json_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Inventario");
+  XLSX.writeFile(wb, `inventario-${new Date().toISOString().slice(0, 10)}.xlsx`);
+  showToast("Inventario exportado", "success");
+}
+
+// Ventas de caja del mes → detalle + resumen por método. Filtra por método.
+async function exportSalesXlsx() {
+  if (!excelReady()) return;
+  const monthVal = $("#report-month").value; // "YYYY-MM"
+  if (!monthVal) {
+    showToast("Elegí un mes", "error");
+    return;
+  }
+  const [y, m] = monthVal.split("-").map(Number);
+  const start = new Date(y, m - 1, 1, 0, 0, 0, 0);
+  const end = new Date(y, m, 1, 0, 0, 0, 0);
+  const methodFilter = $("#report-method").value; // "" = todos
+
+  const btn = $("#export-sales-xlsx");
+  btn.disabled = true;
+  try {
+    let sales = await salesApi.fetchRange(currentUser.uid, start, end);
+    if (methodFilter) sales = sales.filter((s) => s.metodoPago === methodFilter);
+    if (!sales.length) {
+      showToast("No hay ventas en ese período", "info");
+      return;
+    }
+
+    // Hoja "Ventas" (detalle)
+    const detail = sales.map((s) => {
+      const d = new Date(s.ts);
+      const arts = (s.items || []).reduce((a, it) => a + (it.cantidad || 0), 0);
+      return {
+        "Fecha": d.toLocaleDateString("es"),
+        "Hora": d.toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" }),
+        "Método de pago": methodLabel(s.metodoPago),
+        "Artículos": arts,
+        "Total": s.total || 0,
+      };
+    });
+    const wsDetail = XLSX.utils.json_to_sheet(detail);
+
+    // Hoja "Resumen" (por método + total del mes)
+    const byMethod = {};
+    for (const s of sales) {
+      const k = s.metodoPago || "otro";
+      if (!byMethod[k]) byMethod[k] = { count: 0, total: 0 };
+      byMethod[k].count++;
+      byMethod[k].total += s.total || 0;
+    }
+    const grand = sales.reduce((a, s) => a + (s.total || 0), 0);
+    const resumen = Object.keys(byMethod).map((k) => ({
+      "Método de pago": methodLabel(k),
+      "Ventas": byMethod[k].count,
+      "Total": byMethod[k].total,
+    }));
+    resumen.push({ "Método de pago": "TOTAL DEL MES", "Ventas": sales.length, "Total": grand });
+    const wsResumen = XLSX.utils.json_to_sheet(resumen);
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, wsResumen, "Resumen");
+    XLSX.utils.book_append_sheet(wb, wsDetail, "Ventas");
+    const sufijo = methodFilter ? `-${methodFilter}` : "";
+    XLSX.writeFile(wb, `ventas-${monthVal}${sufijo}.xlsx`);
+    showToast(`Ventas exportadas · $${formatPrice(grand)}`, "success");
+  } catch (e) {
+    console.log("[v0] Error al exportar ventas:", e?.message || e);
+    showToast("No se pudo descargar (¿sin conexión?)", "error");
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// Prepara el selector de método y el mes por defecto del reporte.
+function initReportControls() {
+  const sel = $("#report-method");
+  if (sel && sel.options.length <= 1) {
+    for (const mth of PAYMENT_METHODS) {
+      const o = document.createElement("option");
+      o.value = mth.id;
+      o.textContent = mth.label;
+      sel.appendChild(o);
+    }
+  }
+  const month = $("#report-month");
+  if (month && !month.value) {
+    const d = new Date();
+    month.value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  }
+}
+
 function renderMovementRow(m) {
   const entrada = m.accion === "entrada";
   const hora = new Date(m.ts || Date.now()).toLocaleTimeString("es", {
@@ -1040,8 +1178,17 @@ function bindEvents() {
   });
   $("#pos-add-btn").addEventListener("click", posAdd);
   $("#pos-cash-given").addEventListener("input", posUpdateCash);
+  $("#pos-cash-quick").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-cash]");
+    if (b) posSetCash(b.dataset.cash);
+  });
   $("#pos-charge-btn").addEventListener("click", posCharge);
   $("#pos-clear-btn").addEventListener("click", posClear);
+
+  // Exportar a Excel
+  initReportControls();
+  $("#export-inventory-xlsx").addEventListener("click", exportInventoryXlsx);
+  $("#export-sales-xlsx").addEventListener("click", exportSalesXlsx);
 
   $("#add-product-btn").addEventListener("click", () => openProductForm());
   $("#inventory-search").addEventListener("input", renderInventory);
