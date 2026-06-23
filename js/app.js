@@ -21,14 +21,25 @@ const $$ = (sel) => document.querySelectorAll(sel);
 let currentUser = null;
 let products = []; // caché local de productos (IndexedDB)
 let todayMovements = []; // caché local de movimientos del día
+let todaySales = []; // caché local de ventas del día (caja)
+let cart = []; // ticket en curso: { codigo, nombre, precio, cantidad }
+let posMethod = null; // método de pago elegido
 let pendingProduct = null; // producto seleccionado para operación rápida
 let editingCode = null; // código en edición en el formulario
 let syncing = false;
 
+const PAYMENT_METHODS = [
+  { id: "efectivo", label: "Efectivo" },
+  { id: "debito", label: "Débito" },
+  { id: "credito", label: "Crédito" },
+  { id: "transferencia", label: "Transferencia" },
+  { id: "qr", label: "QR / Billetera" },
+];
+
 const scanner = new BarcodeScanner({ onScan: (code) => handleScannedCode(code) });
 
 // Se cargan dinámicamente solo si Firebase está configurado
-let authApi, usersApi, productsApi, movementsApi;
+let authApi, usersApi, productsApi, movementsApi, salesApi;
 
 // ============================================================
 //  Arranque
@@ -47,6 +58,7 @@ async function init() {
   usersApi = fb.usersApi;
   productsApi = fb.productsApi;
   movementsApi = fb.movementsApi;
+  salesApi = fb.salesApi;
 
   bindEvents();
 
@@ -95,6 +107,8 @@ async function showApp() {
   renderInventory();
   renderReports();
   renderHistory(todayMovements);
+  renderPosMethods();
+  renderCart();
   switchTab("tab-inventory");
 
   scanner.start(); // empieza a escuchar el lector USB
@@ -125,20 +139,25 @@ async function ensureDailySync(force = false) {
     try {
       const prods = await productsApi.fetchAll(currentUser.uid);
       const movs = await movementsApi.fetchToday(currentUser.uid);
+      const sales = await salesApi.fetchToday(currentUser.uid);
       await localDB.replaceProducts(prods);
       await localDB.replaceMovements(movs);
+      await localDB.replaceSales(sales);
       await localDB.setMeta({ uid: currentUser.uid, fecha: todayStr(), ts: Date.now() });
       products = prods;
       todayMovements = movs;
+      todaySales = sales;
     } catch (e) {
       console.log("[v0] Descarga fallida, uso datos locales:", e?.message || e);
       products = await localDB.getAllProducts();
       todayMovements = await localDB.getTodayMovements();
+      todaySales = await localDB.getTodaySales();
       showToast("Sin conexión: usando datos guardados", "info");
     }
   } else {
     products = await localDB.getAllProducts();
     todayMovements = await localDB.getTodayMovements();
+    todaySales = await localDB.getTodaySales();
   }
 
   syncing = false;
@@ -162,6 +181,8 @@ async function flushOutbox() {
         await productsApi.save(op.uid, op.payload.data);
       } else if (op.type === "delete") {
         await productsApi.delete(op.uid, op.payload.codigo);
+      } else if (op.type === "sale") {
+        await salesApi.commit(op.uid, op.payload.sale);
       }
       await localDB.deleteFromOutbox(op.id);
     } catch (e) {
@@ -202,11 +223,17 @@ async function refreshSyncUI() {
 //  Tabs
 // ============================================================
 const TAB_TITLES = {
+  "tab-pos": "Caja",
   "tab-scan": "Escanear",
   "tab-inventory": "Inventario",
   "tab-reports": "Reportes",
   "tab-history": "Historial",
 };
+
+function isTabActive(tabId) {
+  const el = $(`#${tabId}`);
+  return el && !el.classList.contains("hidden");
+}
 
 function switchTab(tabId) {
   $$(".tab-panel").forEach((p) => p.classList.toggle("hidden", p.id !== tabId));
@@ -214,23 +241,29 @@ function switchTab(tabId) {
     const active = b.dataset.tab === tabId;
     b.classList.toggle("text-brand", active);
     b.classList.toggle("text-ink/40", !active);
+    b.classList.toggle("nav-active", active);
   });
   $("#header-title").textContent = TAB_TITLES[tabId] || "Inventario";
 
   if (tabId === "tab-reports") renderReports();
   if (tabId === "tab-scan") focusScanInput();
+  if (tabId === "tab-pos") focusPosInput();
 }
 
 // ============================================================
 //  Lectura del código (lector USB tipo teclado)
 // ============================================================
-// Coloca el cursor en el campo de escaneo (en la pestaña Escanear).
 function focusScanInput() {
   const el = $("#scan-input");
   if (el && !anyModalOpen()) {
     el.value = "";
     el.focus();
   }
+}
+
+function focusPosInput() {
+  const el = $("#pos-scan-input");
+  if (el && !anyModalOpen()) el.focus();
 }
 
 function anyModalOpen() {
@@ -240,8 +273,13 @@ function anyModalOpen() {
 let lastScan = { code: null, time: 0 };
 function handleScannedCode(code) {
   if (!code) return;
-  // No procesar mientras hay un modal abierto (evita lecturas encimadas)
   if (anyModalOpen()) return;
+  // En la Caja, cada escaneo suma al ticket (sin anti-rebote, para poder
+  // escanear varias unidades iguales seguidas).
+  if (isTabActive("tab-pos")) {
+    posAddByCode(code);
+    return;
+  }
   // Anti-rebote: ignora el mismo código repetido en menos de 1.2 s
   const now = Date.now();
   if (code === lastScan.code && now - lastScan.time < 1200) return;
@@ -257,6 +295,219 @@ function lookupCode(code) {
   } else {
     openNotFoundModal(code);
   }
+}
+
+// ============================================================
+//  Caja (POS)
+// ============================================================
+function stockOf(codigo) {
+  const p = products.find((x) => x.codigo === codigo);
+  return p ? (p.cantidad ?? 0) : 0;
+}
+
+function cartTotal() {
+  return cart.reduce((s, c) => s + c.precio * c.cantidad, 0);
+}
+
+function posAddByCode(code) {
+  const prod = products.find((p) => p.codigo === code);
+  if (!prod) {
+    showToast(`Código ${code} no está en el inventario`, "error");
+    return;
+  }
+  const linea = cart.find((c) => c.codigo === prod.codigo);
+  const enCarrito = linea ? linea.cantidad : 0;
+  if (enCarrito + 1 > (prod.cantidad ?? 0)) {
+    showToast(`Sin stock suficiente de ${prod.nombre}`, "error");
+    return;
+  }
+  if (linea) linea.cantidad += 1;
+  else
+    cart.push({
+      codigo: prod.codigo,
+      nombre: prod.nombre,
+      precio: Number(prod.precioVenta) || 0,
+      cantidad: 1,
+    });
+  renderCart();
+}
+
+function posChangeQty(codigo, delta) {
+  const linea = cart.find((c) => c.codigo === codigo);
+  if (!linea) return;
+  const nueva = linea.cantidad + delta;
+  if (nueva <= 0) {
+    cart = cart.filter((c) => c.codigo !== codigo);
+  } else if (nueva > stockOf(codigo)) {
+    showToast("No hay más stock de este producto", "error");
+    return;
+  } else {
+    linea.cantidad = nueva;
+  }
+  renderCart();
+}
+
+function posRemove(codigo) {
+  cart = cart.filter((c) => c.codigo !== codigo);
+  renderCart();
+}
+
+function renderCart() {
+  const list = $("#pos-cart");
+  if (!list) return;
+  $("#pos-empty").classList.toggle("hidden", cart.length > 0);
+  list.innerHTML = cart.map(renderCartRow).join("");
+
+  list.querySelectorAll("[data-inc]").forEach((el) =>
+    el.addEventListener("click", () => posChangeQty(el.dataset.inc, 1))
+  );
+  list.querySelectorAll("[data-dec]").forEach((el) =>
+    el.addEventListener("click", () => posChangeQty(el.dataset.dec, -1))
+  );
+  list.querySelectorAll("[data-del]").forEach((el) =>
+    el.addEventListener("click", () => posRemove(el.dataset.del))
+  );
+
+  const count = cart.reduce((s, c) => s + c.cantidad, 0);
+  $("#pos-count").textContent = count;
+  $("#pos-total").textContent = "$" + formatPrice(cartTotal());
+  posUpdateCash();
+  updateChargeButton();
+}
+
+function renderCartRow(c) {
+  const sub = c.precio * c.cantidad;
+  return `
+    <li class="flex items-center gap-2 rounded-xl border border-ink/10 bg-paper p-2.5">
+      <div class="min-w-0 flex-1">
+        <p class="truncate text-sm font-semibold text-ink">${escapeHtml(c.nombre)}</p>
+        <p class="text-xs text-ink/40">$${formatPrice(c.precio)} c/u</p>
+      </div>
+      <div class="flex items-center gap-1.5">
+        <button data-dec="${escapeAttr(c.codigo)}" class="flex h-8 w-8 items-center justify-center rounded-lg bg-ink/10 text-lg font-bold text-ink active:scale-95">−</button>
+        <span class="w-6 text-center text-sm font-bold text-ink">${c.cantidad}</span>
+        <button data-inc="${escapeAttr(c.codigo)}" class="flex h-8 w-8 items-center justify-center rounded-lg bg-ink/10 text-lg font-bold text-ink active:scale-95">+</button>
+      </div>
+      <span class="w-20 text-right text-sm font-bold text-ink">$${formatPrice(sub)}</span>
+      <button data-del="${escapeAttr(c.codigo)}" aria-label="Quitar" class="flex h-8 w-8 items-center justify-center rounded-lg text-ink/40 transition hover:bg-ink/5 hover:text-ink">
+        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </li>`;
+}
+
+function renderPosMethods() {
+  const wrap = $("#pos-methods");
+  if (!wrap) return;
+  wrap.innerHTML = PAYMENT_METHODS.map((m) => {
+    const active = posMethod === m.id;
+    const cls = active
+      ? "border-brand bg-brand text-white"
+      : "border-ink/15 bg-white text-ink/80 hover:bg-paper";
+    return `<button data-method="${m.id}" class="rounded-xl border px-3 py-2.5 text-sm font-semibold transition active:scale-[0.98] ${cls}">${m.label}</button>`;
+  }).join("");
+  wrap.querySelectorAll("[data-method]").forEach((el) =>
+    el.addEventListener("click", () => posSetMethod(el.dataset.method))
+  );
+}
+
+function posSetMethod(id) {
+  posMethod = id;
+  renderPosMethods();
+  $("#pos-cash").classList.toggle("hidden", id !== "efectivo");
+  posUpdateCash();
+  updateChargeButton();
+}
+
+function posUpdateCash() {
+  if (posMethod !== "efectivo") return;
+  const given = parseFloat($("#pos-cash-given").value) || 0;
+  const vuelto = given - cartTotal();
+  $("#pos-change").textContent = "$" + formatPrice(vuelto > 0 ? vuelto : 0);
+}
+
+function updateChargeButton() {
+  const btn = $("#pos-charge-btn");
+  if (!btn) return;
+  btn.disabled = !(cart.length > 0 && !!posMethod);
+  btn.textContent = cart.length > 0 ? `Cobrar $${formatPrice(cartTotal())}` : "Cobrar";
+}
+
+function posClear() {
+  cart = [];
+  posMethod = null;
+  const cash = $("#pos-cash-given");
+  if (cash) cash.value = "";
+  $("#pos-cash").classList.add("hidden");
+  renderPosMethods();
+  renderCart();
+}
+
+async function posCharge() {
+  if (cart.length === 0) {
+    showToast("El ticket está vacío", "error");
+    return;
+  }
+  if (!posMethod) {
+    showToast("Elegí un método de pago", "error");
+    return;
+  }
+  for (const c of cart) {
+    if (c.cantidad > stockOf(c.codigo)) {
+      showToast(`Sin stock suficiente de ${c.nombre}`, "error");
+      return;
+    }
+  }
+
+  const items = cart.map((c) => ({
+    codigo: c.codigo,
+    nombre: c.nombre,
+    precio: c.precio,
+    cantidad: c.cantidad,
+  }));
+  const total = cartTotal();
+  const sale = { items, total, metodoPago: posMethod, ts: Date.now() };
+  const metodoLabel = PAYMENT_METHODS.find((m) => m.id === posMethod)?.label || posMethod;
+
+  // 1) Actualiza el dispositivo al instante: stock, movimientos y venta.
+  for (const it of items) {
+    const idx = products.findIndex((p) => p.codigo === it.codigo);
+    if (idx >= 0) {
+      products[idx] = {
+        ...products[idx],
+        cantidad: (products[idx].cantidad ?? 0) - it.cantidad,
+      };
+      await localDB.putProduct(products[idx]);
+    }
+    const mov = {
+      codigo: it.codigo,
+      nombre: it.nombre,
+      accion: "salida",
+      cantidad: it.cantidad,
+      ts: sale.ts,
+    };
+    todayMovements.unshift(mov);
+    await localDB.addMovement(mov);
+  }
+  todaySales.unshift(sale);
+  await localDB.addSale(sale);
+
+  posClear();
+  renderInventory();
+  renderReports();
+  renderHistory(todayMovements);
+  focusPosInput();
+
+  // 2) Encola la venta completa y trata de subirla.
+  await localDB.addToOutbox({ uid: currentUser.uid, type: "sale", payload: { sale } });
+  const subido = await flushOutbox();
+  refreshSyncUI();
+
+  showToast(
+    subido
+      ? `Venta cobrada · ${metodoLabel} · $${formatPrice(total)}`
+      : "Venta guardada (se subirá al reconectar)",
+    subido ? "success" : "info"
+  );
 }
 
 // ============================================================
@@ -528,6 +779,37 @@ function renderProductCard(p) {
 //  Render: Reportes
 // ============================================================
 function renderReports() {
+  // --- Ventas de hoy (caja) ---
+  const salesTotal = todaySales.reduce((s, v) => s + (v.total || 0), 0);
+  const salesCount = todaySales.length;
+  setText("rep-sales-total", "$" + formatPrice(salesTotal));
+  setText("rep-sales-count", salesCount);
+  setText("rep-sales-avg", "$" + formatPrice(salesCount ? salesTotal / salesCount : 0));
+
+  const byMethod = {};
+  for (const v of todaySales) {
+    const k = v.metodoPago || "otro";
+    if (!byMethod[k]) byMethod[k] = { count: 0, total: 0 };
+    byMethod[k].count++;
+    byMethod[k].total += v.total || 0;
+  }
+  const methodsList = $("#rep-methods");
+  $("#rep-methods-empty").classList.toggle("hidden", salesCount > 0);
+  methodsList.innerHTML = PAYMENT_METHODS.filter((m) => byMethod[m.id])
+    .map((m) => {
+      const d = byMethod[m.id];
+      return `
+      <li class="flex items-center justify-between rounded-2xl bg-white p-3 shadow-sm ring-1 ring-ink/10">
+        <div>
+          <p class="font-medium text-ink">${m.label}</p>
+          <p class="text-xs text-ink/40">${d.count} ${d.count === 1 ? "venta" : "ventas"}</p>
+        </div>
+        <span class="text-lg font-bold text-ink">$${formatPrice(d.total)}</span>
+      </li>`;
+    })
+    .join("");
+
+  // --- Valor del inventario ---
   let totalUnits = 0, totalCosto = 0, totalVenta = 0;
   for (const p of products) {
     const c = p.cantidad ?? 0;
@@ -741,6 +1023,25 @@ function bindEvents() {
     }
   });
   $("#scan-go-btn").addEventListener("click", submitScan);
+
+  // Caja (POS)
+  const posInput = $("#pos-scan-input");
+  const posAdd = () => {
+    const code = posInput.value.trim();
+    posInput.value = "";
+    if (code) posAddByCode(code);
+    posInput.focus();
+  };
+  posInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      posAdd();
+    }
+  });
+  $("#pos-add-btn").addEventListener("click", posAdd);
+  $("#pos-cash-given").addEventListener("input", posUpdateCash);
+  $("#pos-charge-btn").addEventListener("click", posCharge);
+  $("#pos-clear-btn").addEventListener("click", posClear);
 
   $("#add-product-btn").addEventListener("click", () => openProductForm());
   $("#inventory-search").addEventListener("input", renderInventory);
