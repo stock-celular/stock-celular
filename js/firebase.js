@@ -194,4 +194,25 @@ export const salesApi = {
       };
     });
   },
+
+  // Descarga las ventas en un rango [start, end) (para reportes mensuales).
+  async fetchRange(uid, start, end) {
+    const q = query(
+      salesCol(uid),
+      where("fecha", ">=", Timestamp.fromDate(start)),
+      where("fecha", "<", Timestamp.fromDate(end)),
+      orderBy("fecha", "asc")
+    );
+    const snap = await getDocs(q);
+    return snap.docs.map((d) => {
+      const data = d.data();
+      const fecha = data.fecha?.toDate ? data.fecha.toDate() : new Date();
+      return {
+        total: data.total || 0,
+        metodoPago: data.metodoPago || "otro",
+        items: data.items || [],
+        ts: fecha.getTime(),
+      };
+    });
+  },
 };
