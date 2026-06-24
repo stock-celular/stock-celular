@@ -23,6 +23,7 @@ import {
   query,
   where,
   orderBy,
+  onSnapshot,
   serverTimestamp,
   Timestamp,
   increment,
@@ -33,6 +34,19 @@ import { firebaseConfig } from "./config.js";
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
+
+// ── Detección de cuota agotada ──────────────────────────────
+// Firebase lanza "resource-exhausted" al superar el plan gratuito.
+// Cualquier parte de la app puede llamar a isQuotaError(err) para
+// saber si debe mostrar la alerta especial en lugar de un toast genérico.
+export function isQuotaError(err) {
+  const code = err?.code || err?.message || "";
+  return (
+    code.includes("resource-exhausted") ||
+    code.includes("quota-exceeded") ||
+    code.includes("RESOURCE_EXHAUSTED")
+  );
+}
 
 // ---------- Autenticación ----------
 // Nota: NO se expone "register". Las cuentas se crean a mano por un
@@ -78,11 +92,25 @@ export const usersApi = {
 
 // ---------- Productos ----------
 export const productsApi = {
-  // Descarga TODOS los productos una sola vez (para el caché del día).
+  // Descarga TODOS los productos una sola vez (para el caché inicial).
   async fetchAll(uid) {
     const q = query(productsCol(uid), orderBy("nombre"));
     const snap = await getDocs(q);
     return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  },
+
+  // Escucha cambios en tiempo real. Llama a onData(productos[]) cada vez
+  // que algo cambia en Firestore. Devuelve la función para cancelar el listener.
+  listenProducts(uid, onData, onError) {
+    const q = query(productsCol(uid), orderBy("nombre"));
+    return onSnapshot(
+      q,
+      (snap) => {
+        const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        onData(list);
+      },
+      onError
+    );
   },
 
   async getByCode(uid, codigo) {
