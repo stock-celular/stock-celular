@@ -314,7 +314,10 @@
 
         <!-- ====== TAB: REPORTES ====== -->
         <section id="tab-reports" class="tab-panel hidden">
-          <h2 class="text-base font-semibold text-ink">Ventas de hoy</h2>
+          <h2 class="flex items-center gap-2 text-base font-semibold text-[#576179]">
+            <svg class="h-4 w-4 text-[#979fc5]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+            Ventas de hoy
+          </h2>
           <p class="mt-1 text-sm text-ink/50">Lo cobrado en la caja durante el día.</p>
 
           <div class="mt-4 grid grid-cols-3 gap-2">
@@ -332,11 +335,14 @@
             </div>
           </div>
 
-          <h3 class="mt-5 text-sm font-semibold uppercase tracking-wide text-ink/50">Por método de pago</h3>
+          <h3 class="mt-5 text-[11px] font-semibold uppercase tracking-wide text-[#979fc5]">Por método de pago</h3>
           <ul id="rep-methods" class="mt-2 space-y-2"></ul>
           <p id="rep-methods-empty" class="hidden rounded-xl bg-white px-4 py-6 text-center text-sm text-ink/40 ring-1 ring-ink/10">Todavía no hay ventas hoy.</p>
 
-          <h2 class="mt-8 text-base font-semibold text-ink">Resumen de inventario</h2>
+          <h2 class="mt-8 flex items-center gap-2 text-base font-semibold text-[#576179]">
+            <svg class="h-4 w-4 text-[#979fc5]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+            Resumen de inventario
+          </h2>
           <p class="mt-1 text-sm text-ink/50">Una foto del estado actual de tu negocio.</p>
 
           <!-- Tarjetas de valor -->
@@ -367,7 +373,10 @@
           </div>
 
           <!-- Movimientos de hoy -->
-          <h3 class="mt-6 text-sm font-semibold uppercase tracking-wide text-ink/50">Movimientos de hoy</h3>
+          <h3 class="mt-6 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-[#979fc5]">
+            <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M8 21H5a2 2 0 0 0-2-2v-3M21 16v3a2 2 0 0 1-2 2h-3"/></svg>
+            Movimientos de hoy
+          </h3>
           <div class="mt-2 grid grid-cols-2 gap-2">
             <div class="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-ink/10">
               <div class="flex items-center gap-2 text-brand">
@@ -388,12 +397,18 @@
           </div>
 
           <!-- Stock bajo -->
-          <h3 class="mt-6 text-sm font-semibold uppercase tracking-wide text-ink/50">Stock bajo el mínimo</h3>
+          <h3 class="mt-6 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-red-500">
+            <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
+            Stock bajo el mínimo
+          </h3>
           <ul id="rep-low-list" class="mt-2 space-y-2"></ul>
           <p id="rep-low-empty" class="hidden rounded-xl bg-white px-4 py-6 text-center text-sm text-ink/40 ring-1 ring-ink/10">Todo en orden: ningún producto bajo el mínimo.</p>
 
           <!-- ====== Exportar a Excel ====== -->
-          <h2 class="mt-8 text-base font-semibold text-ink">Exportar a Excel</h2>
+          <h2 class="mt-8 flex items-center gap-2 text-base font-semibold text-[#576179]">
+            <svg class="h-4 w-4 text-[#979fc5]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg>
+            Exportar a Excel
+          </h2>
           <p class="mt-1 text-sm text-ink/50">Descargá planillas .xlsx del inventario y de las ventas de caja.</p>
 
           <div class="mt-4 space-y-4 lg:grid lg:grid-cols-2 lg:gap-4 lg:space-y-0">
