@@ -382,13 +382,19 @@ function stockOf(codigo) {
 }
 
 function cartTotal() {
-  return cart.reduce((s, c) => s + c.precio * c.cantidad, 0);
+  // Para pesables, c.precio ya es el precio final (precioKilo * gramos / 1000).
+  // Para normales, c.precio * c.cantidad.
+  return cart.reduce((s, c) => s + (c.pesable ? c.precio : c.precio * c.cantidad), 0);
 }
 
 function posAddByCode(code) {
   const prod = products.find((p) => p.codigo === code);
   if (!prod) {
     showToast(`Código ${code} no está en el inventario`, "error");
+    return;
+  }
+  if (prod.pesable) {
+    openWeighModal(prod);
     return;
   }
   const linea = cart.find((c) => c.codigo === prod.codigo);
@@ -404,8 +410,74 @@ function posAddByCode(code) {
       nombre: prod.nombre,
       precio: Number(prod.precioVenta) || 0,
       cantidad: 1,
+      pesable: false,
     });
   renderCart();
+}
+
+// ── Búsqueda por nombre en la caja ──────────────────────────
+let posSearchTimeout = null;
+function posPendingSearch(term) {
+  clearTimeout(posSearchTimeout);
+  const results = $("#pos-search-results");
+  if (!term || term.length < 2) { results.classList.add("hidden"); return; }
+  posSearchTimeout = setTimeout(() => {
+    const t = term.toLowerCase();
+    const matches = products
+      .filter((p) => (p.nombre || "").toLowerCase().includes(t))
+      .slice(0, 8);
+    if (!matches.length) { results.classList.add("hidden"); return; }
+    results.innerHTML = matches.map((p) => `
+      <li data-code="${escapeAttr(p.codigo)}"
+        class="flex cursor-pointer items-center justify-between px-4 py-2.5 text-sm hover:bg-brand/5 active:bg-brand/10">
+        <span class="font-medium text-ink truncate flex-1">${escapeHtml(p.nombre)}</span>
+        <span class="ml-3 shrink-0 text-xs ${p.pesable ? "text-brand font-semibold" : "text-ink/40"}">
+          ${p.pesable ? `$${formatPrice(p.precioKilo)}/kg` : `$${formatPrice(p.precioVenta)}`}
+        </span>
+      </li>`).join("");
+    results.classList.remove("hidden");
+    results.querySelectorAll("li[data-code]").forEach((el) =>
+      el.addEventListener("click", () => {
+        results.classList.add("hidden");
+        $("#pos-scan-input").value = "";
+        posAddByCode(el.dataset.code);
+      })
+    );
+  }, 200);
+}
+
+// ── Modal de pesable: ingresar gramos ───────────────────────
+let pendingWeighProduct = null;
+function openWeighModal(prod) {
+  pendingWeighProduct = prod;
+  $("#weigh-product-name").textContent = prod.nombre;
+  $("#weigh-price-ref").textContent = `$${formatPrice(prod.precioKilo)} por kilo`;
+  $("#weigh-grams").value = "";
+  $("#weigh-preview").classList.add("hidden");
+  openModal("weigh-modal");
+  setTimeout(() => $("#weigh-grams").focus(), 120);
+}
+
+function confirmWeigh() {
+  const prod = pendingWeighProduct;
+  if (!prod) return;
+  const gramos = parseFloat($("#weigh-grams").value) || 0;
+  if (gramos <= 0) { showToast("Ingresá los gramos", "error"); return; }
+  const precio = (prod.precioKilo * gramos) / 1000;
+  // Cada pesada es una línea separada en el carrito (identificador único por timestamp)
+  const uid = `${prod.codigo}-${Date.now()}`;
+  cart.push({
+    codigo: uid,
+    nombre: `${prod.nombre} (${gramos}g)`,
+    precio,        // precio final ya calculado
+    cantidad: 1,
+    pesable: true,
+    codigoBase: prod.codigo,
+  });
+  closeModal("weigh-modal");
+  pendingWeighProduct = null;
+  renderCart();
+  showToast(`${prod.nombre} — ${gramos}g → $${formatPrice(precio)}`, "success");
 }
 
 function posChangeQty(codigo, delta) {
@@ -452,6 +524,19 @@ function renderCart() {
 }
 
 function renderCartRow(c) {
+  if (c.pesable) {
+    return `
+      <li class="flex items-center gap-2 rounded-xl border border-brand/20 bg-brand/5 p-2.5">
+        <div class="min-w-0 flex-1">
+          <p class="truncate text-sm font-semibold text-ink">${escapeHtml(c.nombre)}</p>
+          <p class="text-xs text-ink/40">Precio calculado por peso</p>
+        </div>
+        <span class="w-20 text-right text-sm font-bold text-brand">$${formatPrice(c.precio)}</span>
+        <button data-del="${escapeAttr(c.codigo)}" aria-label="Quitar" class="flex h-8 w-8 items-center justify-center rounded-lg text-ink/40 transition hover:bg-ink/5 hover:text-ink">
+          <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </li>`;
+  }
   const sub = c.precio * c.cantidad;
   return `
     <li class="flex items-center gap-2 rounded-xl border border-ink/10 bg-paper p-2.5">
@@ -674,6 +759,8 @@ function openProductForm(product = null) {
   const form = $("#product-form");
   form.reset();
   $("#product-error").classList.add("hidden");
+  $("#pf-precio-kilo-wrap").classList.add("hidden");
+  $("#pf-pesable").checked = false;
 
   if (product) {
     editingCode = product.codigo;
@@ -681,17 +768,24 @@ function openProductForm(product = null) {
     $("#pf-codigo").value = product.codigo;
     $("#pf-codigo").readOnly = true;
     $("#pf-codigo").classList.add("bg-paper");
+    $("#pf-generar-id").classList.add("hidden");
     $("#pf-nombre").value = product.nombre || "";
     $("#pf-cantidad").value = product.cantidad ?? 0;
     $("#pf-minimo").value = product.stockMinimo ?? 0;
     $("#pf-costo").value = product.precioCosto ?? 0;
     $("#pf-venta").value = product.precioVenta ?? 0;
+    if (product.pesable) {
+      $("#pf-pesable").checked = true;
+      $("#pf-precio-kilo-wrap").classList.remove("hidden");
+      $("#pf-precio-kilo").value = product.precioKilo ?? 0;
+    }
     $("#product-delete-btn").classList.remove("hidden");
   } else {
     editingCode = null;
     $("#product-modal-title").textContent = "Nuevo producto";
     $("#pf-codigo").readOnly = false;
     $("#pf-codigo").classList.remove("bg-paper");
+    $("#pf-generar-id").classList.remove("hidden");
     $("#product-delete-btn").classList.add("hidden");
   }
   openModal("product-modal");
@@ -711,6 +805,7 @@ async function saveProduct(e) {
     showError("product-error", "El código y el nombre son obligatorios.");
     return;
   }
+  const pesable = $("#pf-pesable").checked;
   const data = {
     codigo,
     nombre,
@@ -718,6 +813,8 @@ async function saveProduct(e) {
     stockMinimo: parseInt($("#pf-minimo").value, 10) || 0,
     precioCosto: parseFloat($("#pf-costo").value) || 0,
     precioVenta: parseFloat($("#pf-venta").value) || 0,
+    pesable,
+    precioKilo: pesable ? (parseFloat($("#pf-precio-kilo").value) || 0) : 0,
   };
 
   // 1) Caché local
@@ -1219,6 +1316,14 @@ function formatPrice(n) {
   return num.toLocaleString("es", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 }
 
+// Genera un ID único para productos sin código de barras.
+// Formato: "M-" + timestamp base36 + 3 chars aleatorios. Ej: M-lf3k2x-4a7
+function generateUID() {
+  const ts = Date.now().toString(36);
+  const rand = Math.random().toString(36).slice(2, 5);
+  return `M-${ts}-${rand}`;
+}
+
 // ============================================================
 //  Wiring de eventos
 // ============================================================
@@ -1257,17 +1362,20 @@ function bindEvents() {
   // Caja (POS)
   const posInput = $("#pos-scan-input");
   const posAdd = () => {
-    const code = posInput.value.trim();
+    const val = posInput.value.trim();
     posInput.value = "";
-    if (code) posAddByCode(code);
+    $("#pos-search-results").classList.add("hidden");
+    if (val) posAddByCode(val);
     posInput.focus();
   };
   posInput.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      posAdd();
-    }
+    if (e.key === "Enter") { e.preventDefault(); posAdd(); }
+    if (e.key === "Escape") { $("#pos-search-results").classList.add("hidden"); }
   });
+  posInput.addEventListener("input", () => posPendingSearch(posInput.value.trim()));
+  posInput.addEventListener("blur", () =>
+    setTimeout(() => $("#pos-search-results").classList.add("hidden"), 150)
+  );
   $("#pos-add-btn").addEventListener("click", posAdd);
   $("#pos-cash-given").addEventListener("input", posUpdateCash);
   $("#pos-cash-quick").addEventListener("click", (e) => {
@@ -1276,6 +1384,37 @@ function bindEvents() {
   });
   $("#pos-charge-btn").addEventListener("click", posCharge);
   $("#pos-clear-btn").addEventListener("click", posClear);
+
+  // Modal de pesable: confirmar gramos
+  $("#weigh-grams").addEventListener("input", () => {
+    const prod = pendingWeighProduct;
+    if (!prod) return;
+    const g = parseFloat($("#weigh-grams").value) || 0;
+    const precio = (prod.precioKilo * g) / 1000;
+    const preview = $("#weigh-preview");
+    if (g > 0) {
+      $("#weigh-preview-price").textContent = "$" + formatPrice(precio);
+      preview.classList.remove("hidden");
+    } else {
+      preview.classList.add("hidden");
+    }
+  });
+  $("#weigh-grams").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); confirmWeigh(); }
+  });
+  $("#weigh-confirm-btn").addEventListener("click", confirmWeigh);
+
+  // Botón generar ID automático
+  $("#pf-generar-id").addEventListener("click", () => {
+    $("#pf-codigo").value = generateUID();
+  });
+
+  // Toggle pesable: muestra/oculta precio por kilo
+  $("#pf-pesable").addEventListener("change", () => {
+    const isPesable = $("#pf-pesable").checked;
+    $("#pf-precio-kilo-wrap").classList.toggle("hidden", !isPesable);
+    if (isPesable) setTimeout(() => $("#pf-precio-kilo").focus(), 50);
+  });
 
   // Exportar a Excel
   initReportControls();
