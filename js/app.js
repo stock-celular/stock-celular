@@ -1,13 +1,12 @@
 // ============================================================
-//  Controlador principal de la app  (modo offline-first + tiempo real)
+//  Controlador principal de la app  (offline-first + tiempo real)
 //
 //  - Al iniciar sesión activa un listener onSnapshot sobre productos:
 //    cualquier cambio en Firestore llega automáticamente sin recargar.
-//  - Movimientos y ventas del día se descargan una vez al inicio
-//    (no tiene sentido escucharlos en tiempo real en una tienda chica).
+//  - Movimientos y ventas del día se descargan una vez al inicio del día.
 //  - Las escrituras van al outbox local y se suben con debounce (800 ms).
-//  - Si Firebase devuelve "resource-exhausted" (cuota agotada del plan
-//    gratuito) se muestra un banner persistente de alerta.
+//  - Semáforo en flushOutbox: nunca corren dos uploads en paralelo.
+//  - Si Firebase devuelve "resource-exhausted" se muestra un banner de alerta.
 //  (No necesitas editar este archivo)
 // ============================================================
 
@@ -148,13 +147,11 @@ async function showApp() {
 }
 
 function startProductsListener() {
-  // Cancela un listener anterior si existía (ej: re-login)
   if (unsubscribeProducts) unsubscribeProducts();
 
   unsubscribeProducts = productsApi.listenProducts(
     currentUser.uid,
     async (list) => {
-      // Datos frescos desde Firestore → actualiza memoria y caché local
       products = list;
       await localDB.replaceProducts(list);
       await localDB.setMeta({ uid: currentUser.uid, fecha: todayStr(), ts: Date.now() });
@@ -164,9 +161,7 @@ function startProductsListener() {
     },
     (err) => {
       console.error("[v0] Listener de productos falló:", err);
-      if (isQuotaError(err)) {
-        showQuotaBanner();
-      }
+      if (isQuotaError(err)) showQuotaBanner();
     }
   );
 }

@@ -31,14 +31,11 @@ import {
 
 import { firebaseConfig } from "./config.js";
 
-// const app = initializeApp(firebaseConfig);
-// export const auth = getAuth(app);
-// export const db = getFirestore(app);
+const app = initializeApp(firebaseConfig);
+export const auth = getAuth(app);
+export const db = getFirestore(app);
 
 // ── Detección de cuota agotada ──────────────────────────────
-// Firebase lanza "resource-exhausted" al superar el plan gratuito.
-// Cualquier parte de la app puede llamar a isQuotaError(err) para
-// saber si debe mostrar la alerta especial en lugar de un toast genérico.
 export function isQuotaError(err) {
   const code = err?.code || err?.message || "";
   return (
@@ -49,19 +46,13 @@ export function isQuotaError(err) {
 }
 
 // ---------- Autenticación ----------
-// Nota: NO se expone "register". Las cuentas se crean a mano por un
-// administrador en la consola de Firebase (Authentication → Users).
 export const authApi = {
   login: (email, password) => signInWithEmailAndPassword(auth, email, password),
   logout: () => signOut(auth),
   onChange: (cb) => onAuthStateChanged(auth, cb),
 };
 
-// ---------- Estructura de datos (aislada por usuario) ----------
-// Cada usuario tiene su propio espacio y NO se mezcla con otros:
-//   usuarios/{uid}                 → documento de perfil (la "tabla de usuarios")
-//   usuarios/{uid}/productos/{cod} → su inventario
-//   usuarios/{uid}/movimientos/{}  → su historial
+// ---------- Estructura de datos ----------
 function userDoc(uid) {
   return doc(db, "usuarios", uid);
 }
@@ -80,7 +71,6 @@ function salesCol(uid) {
 
 // ---------- Perfil de usuario ----------
 export const usersApi = {
-  // Crea/actualiza el documento de perfil del usuario al iniciar sesión.
   async ensureProfile(uid, email) {
     await setDoc(
       userDoc(uid),
@@ -92,15 +82,13 @@ export const usersApi = {
 
 // ---------- Productos ----------
 export const productsApi = {
-  // Descarga TODOS los productos una sola vez (para el caché inicial).
   async fetchAll(uid) {
     const q = query(productsCol(uid), orderBy("nombre"));
     const snap = await getDocs(q);
     return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
   },
 
-  // Escucha cambios en tiempo real. Llama a onData(productos[]) cada vez
-  // que algo cambia en Firestore. Devuelve la función para cancelar el listener.
+  // Escucha cambios en tiempo real sobre la colección completa.
   listenProducts(uid, onData, onError) {
     const q = query(productsCol(uid), orderBy("nombre"));
     return onSnapshot(
@@ -118,7 +106,6 @@ export const productsApi = {
     return snap.exists() ? { id: snap.id, ...snap.data() } : null;
   },
 
-  // Crea o reemplaza un producto (usa el código de barras como id)
   async save(uid, data) {
     const { codigo, ...rest } = data;
     await setDoc(
@@ -132,7 +119,6 @@ export const productsApi = {
     await deleteDoc(productDoc(uid, codigo));
   },
 
-  // Suma (entrada) o resta (salida) stock de forma atómica y registra el movimiento
   async adjustStock(uid, producto, accion, cantidad) {
     const delta = accion === "entrada" ? cantidad : -cantidad;
     await updateDoc(productDoc(uid, producto.codigo), {
@@ -149,9 +135,8 @@ export const productsApi = {
   },
 };
 
-// ---------- Movimientos (historial del día) ----------
+// ---------- Movimientos ----------
 export const movementsApi = {
-  // Descarga los movimientos de hoy una sola vez (al sincronizar el día).
   async fetchToday(uid) {
     const start = new Date();
     start.setHours(0, 0, 0, 0);
@@ -177,8 +162,6 @@ export const movementsApi = {
 
 // ---------- Ventas (caja) ----------
 export const salesApi = {
-  // Cobra una venta completa: descuenta stock + registra movimientos de
-  // salida por cada ítem y guarda el comprobante de venta. Todo en línea.
   async commit(uid, sale) {
     for (const it of sale.items) {
       await updateDoc(productDoc(uid, it.codigo), {
@@ -201,7 +184,6 @@ export const salesApi = {
     });
   },
 
-  // Descarga las ventas de hoy una sola vez (al sincronizar el día).
   async fetchToday(uid) {
     const start = new Date();
     start.setHours(0, 0, 0, 0);
@@ -223,7 +205,6 @@ export const salesApi = {
     });
   },
 
-  // Descarga las ventas en un rango [start, end) (para reportes mensuales).
   async fetchRange(uid, start, end) {
     const q = query(
       salesCol(uid),
