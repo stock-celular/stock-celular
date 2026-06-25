@@ -1,26 +1,13 @@
 // ============================================================
-//  Controlador principal de la app  (offline-first + tiempo real eficiente)
+//  Controlador principal de la app  (modo offline-first + tiempo real)
 //
-//  ARQUITECTURA DE SINCRONIZACIÓN:
-//  ─────────────────────────────────────────────────────────
-//  1. Persistencia offline (IndexedDB de Firestore): los documentos
-//     se guardan en el dispositivo. Las lecturas sirven desde caché
-//     local cuando los datos no cambiaron → 0 lecturas de red.
-//
-//  2. Listener de señal (1 documento): en lugar de escuchar toda la
-//     colección de productos (N lecturas por evento), escuchamos un
-//     único doc "meta/signal" que solo tiene un timestamp.
-//     Cuando cambia → fetchAll() trae los productos frescos.
-//     Costo: 1 lectura de señal por evento, luego fetchAll desde caché.
-//
-//  3. Escrituras con touchSignal: cada save/delete/adjustStock actualiza
-//     la señal, notificando a otros dispositivos automáticamente.
-//
-//  4. Outbox con debounce (800ms): las escrituras se agrupan antes de
-//     subir, y el semáforo evita uploads paralelos.
-//
-//  Resultado: tiempo real automático sin botones, con consumo mínimo
-//  del plan gratuito de Firebase.
+//  - Al iniciar sesión activa un listener onSnapshot sobre productos:
+//    cualquier cambio en Firestore llega automáticamente sin recargar.
+//  - Movimientos y ventas del día se descargan una vez al inicio
+//    (no tiene sentido escucharlos en tiempo real en una tienda chica).
+//  - Las escrituras van al outbox local y se suben con debounce (800 ms).
+//  - Si Firebase devuelve "resource-exhausted" (cuota agotada del plan
+//    gratuito) se muestra un banner persistente de alerta.
 //  (No necesitas editar este archivo)
 // ============================================================
 
@@ -105,7 +92,6 @@ function showLogin() {
   scanner.stop();
   // Cancela el listener en tiempo real al cerrar sesión
   if (unsubscribeProducts) { unsubscribeProducts(); unsubscribeProducts = null; }
-  signalTs = null;
   products = [];
   todayMovements = [];
   $("#app-view").classList.add("hidden");
@@ -161,57 +147,26 @@ async function showApp() {
   startProductsListener();
 }
 
-// ============================================================
-//  Listener de señal — tiempo real con mínimas lecturas
-// ============================================================
-// En lugar de escuchar toda la colección de productos (1 lectura
-// por documento por cada cambio), escuchamos un único doc "señal"
-// que solo contiene un timestamp. Cuando cambia, descargamos los
-// productos frescos con fetchAll() una sola vez.
-//
-// Costo real por operación:
-//   Antes (onSnapshot colección):  1 lectura × N productos
-//   Ahora (señal + fetchAll):       1 lectura (señal) + N lecturas (fetchAll)
-//
-// Parece igual, pero la diferencia clave es la persistencia offline:
-// fetchAll() sirve desde IndexedDB si los datos no cambiaron, costando
-// 0 lecturas de red. El listener de señal solo va a la red cuando el
-// timestamp realmente cambió, es decir, cuando hubo una escritura.
-
-let signalTs = null; // timestamp de la última señal procesada
-
 function startProductsListener() {
+  // Cancela un listener anterior si existía (ej: re-login)
   if (unsubscribeProducts) unsubscribeProducts();
 
-  unsubscribeProducts = productsApi.listenSignal(
+  unsubscribeProducts = productsApi.listenProducts(
     currentUser.uid,
-    async (snap) => {
-      // La señal llega desde caché local primero (gratis) y luego
-      // desde la red si hubo un cambio real.
-      const newTs = snap.data()?.ts?.toMillis?.() ?? null;
-
-      // Si el timestamp no cambió, los datos son los mismos → no hacemos nada.
-      if (newTs && newTs === signalTs) return;
-      signalTs = newTs;
-
-      try {
-        // fetchAll usa la caché de IndexedDB de Firestore: si los docs
-        // no cambiaron desde la última lectura, no consume lecturas de red.
-        const list = await productsApi.fetchAll(currentUser.uid);
-        products = list;
-        await localDB.replaceProducts(list);
-        await localDB.setMeta({ uid: currentUser.uid, fecha: todayStr(), ts: Date.now() });
-        renderInventory();
-        renderReports();
-        refreshSyncUI();
-      } catch (e) {
-        if (isQuotaError(e)) showQuotaBanner();
-        else console.error("[v0] Error al descargar productos:", e?.message || e);
-      }
+    async (list) => {
+      // Datos frescos desde Firestore → actualiza memoria y caché local
+      products = list;
+      await localDB.replaceProducts(list);
+      await localDB.setMeta({ uid: currentUser.uid, fecha: todayStr(), ts: Date.now() });
+      renderInventory();
+      renderReports();
+      refreshSyncUI();
     },
     (err) => {
-      console.error("[v0] Listener de señal falló:", err);
-      if (isQuotaError(err)) showQuotaBanner();
+      console.error("[v0] Listener de productos falló:", err);
+      if (isQuotaError(err)) {
+        showQuotaBanner();
+      }
     }
   );
 }
