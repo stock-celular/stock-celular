@@ -1012,21 +1012,21 @@ function renderProductCard(p) {
 
   return `
     <li data-edit="${escapeAttr(p.codigo)}"
-        class="flex cursor-pointer items-center gap-3 rounded-2xl border p-3 shadow-sm transition active:scale-[0.99] ${cardClasses}">
+        class="flex cursor-pointer items-start gap-3 rounded-2xl border p-3 shadow-sm transition active:scale-[0.99] ${cardClasses}">
       <div class="min-w-0 flex-1">
-        <div class="flex items-center gap-2">
-          <p class="truncate font-semibold text-ink">${escapeHtml(p.nombre || "Sin nombre")}</p>
+        <div class="flex flex-wrap items-start gap-x-2 gap-y-1">
+          <p class="text-base font-bold leading-snug text-ink" style="word-break:break-word">${escapeHtml(p.nombre || "Sin nombre")}</p>
           ${badge}
         </div>
-        <p class="truncate font-mono text-xs text-ink/40">${escapeHtml(p.codigo)}</p>
-        <p class="mt-0.5 text-xs text-ink/50">Mín: ${minimo} · Venta: $${formatPrice(p.precioVenta)}</p>
+        <p class="mt-1 font-mono text-[10px] text-ink/30">${escapeHtml(p.codigo)}</p>
+        <p class="mt-0.5 text-[10px] text-ink/40">Mín: ${minimo} · ${p.pesable ? `$${formatPrice(p.precioKilo)}/kg` : `Venta: $${formatPrice(p.precioVenta)}`}</p>
       </div>
-      <div class="text-right">
+      <div class="shrink-0 pt-0.5 text-right">
         <p class="text-2xl font-bold leading-none ${cantColor}">${cantidad}</p>
-        <p class="text-[11px] uppercase tracking-wide text-ink/40">unid.</p>
+        <p class="text-[10px] uppercase tracking-wide text-ink/30">${p.pesable ? "kg" : "unid."}</p>
       </div>
       <button data-op="${escapeAttr(p.codigo)}" aria-label="Operación rápida"
-        class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand text-white transition active:scale-95 hover:bg-brand-dark">
+        class="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand text-white transition active:scale-95 hover:bg-brand-dark">
         <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/></svg>
       </button>
     </li>`;

@@ -1,28 +1,28 @@
 /* =============================================
    PALETA DE COLORES
-   --color-1: #060606  (negro)
-   --color-2: #252531  (azul-gris muy oscuro)
-   --color-3: #576179  (azul-gris medio)
-   --color-4: #979fc5  (azul-gris claro)
-   --color-5: #d5deea  (azul muy pálido)
+   --color-1: #ff4759  (rojo vibrante)
+   --color-2: #ff9539  (naranja)
+   --color-3: #ffe651  (amarillo)
+   --color-4: #fffb95  (amarillo pálido)
+   --color-5: #fffbde  (crema muy suave)
    ============================================= */
 
 :root {
-  --color-1: #060606;
-  --color-2: #252531;
-  --color-3: #576179;
-  --color-4: #979fc5;
-  --color-5: #d5deea;
+  --color-1: #ff4759;
+  --color-2: #ff9539;
+  --color-3: #ffe651;
+  --color-4: #fffb95;
+  --color-5: #fffbde;
 
   /* Aliases semánticos */
-  --color-bg:           #f0f3f8;          /* fondo general: azul muy suave */
+  --color-bg:           #fff8f0;          /* fondo general: cálido suave */
   --color-surface:      #ffffff;          /* superficies (cards, modales) */
-  --color-border:       var(--color-5);   /* bordes suaves */
-  --color-text-primary: var(--color-1);   /* texto principal */
-  --color-text-muted:   var(--color-3);   /* texto secundario */
-  --color-accent:       var(--color-3);   /* botones, links */
-  --color-accent-light: var(--color-4);   /* hover, badges */
-  --color-highlight:    var(--color-5);   /* chips, etiquetas destacadas */
+  --color-border:       var(--color-4);   /* bordes suaves */
+  --color-text-primary: #1a1a1a;          /* texto principal: negro para contraste */
+  --color-text-muted:   #6b5a4e;          /* texto secundario: marrón cálido */
+  --color-accent:       var(--color-1);   /* botones, links */
+  --color-accent-light: var(--color-2);   /* hover, badges */
+  --color-highlight:    var(--color-3);   /* chips, etiquetas destacadas */
 }
 
 /* Estilos complementarios a Tailwind */
@@ -44,7 +44,7 @@
 .modal-backdrop {
   position: absolute;
   inset: 0;
-  background: rgba(6, 6, 6, 0.5);        /* --color-1 con opacidad */
+  background: rgba(26, 10, 10, 0.45);    /* oscuro cálido con opacidad */
   animation: fade-in 0.15s ease-out;
 }
 
@@ -53,12 +53,12 @@
   width: 100%;
   max-width: 32rem;
   background: var(--color-surface);
-  border-top: 3px solid var(--color-4);
+  border-top: 3px solid var(--color-2);
   border-top-left-radius: 1.25rem;
   border-top-right-radius: 1.25rem;
   padding: 1.25rem;
   padding-bottom: calc(1.25rem + env(safe-area-inset-bottom, 0px));
-  box-shadow: 0 -8px 30px rgba(37, 37, 49, 0.12);
+  box-shadow: 0 -8px 30px rgba(255, 71, 89, 0.10);
   animation: slide-up 0.2s ease-out;
 }
 
@@ -101,9 +101,9 @@
 
 /* ─── Barra lateral: ítem activo ─── */
 .nav-side.nav-active {
-  background: rgba(151, 159, 197, 0.12);  /* --color-4 suavizado */
-  border-left: 3px solid var(--color-3);
-  color: var(--color-2);
+  background: rgba(255, 149, 57, 0.12);  /* --color-2 suavizado */
+  border-left: 3px solid var(--color-1);
+  color: #1a1a1a;
 }
 
 /* ─── Clases de color de la paleta (utilidades) ─── */

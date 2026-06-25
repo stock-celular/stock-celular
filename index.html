@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <meta name="theme-color" content="#07393c" />
+    <meta name="theme-color" content="#ff4759" />
     <meta name="description" content="Control de stock privado para pequeño negocio. Escaneo de código de barras, entradas y salidas, alertas de stock mínimo, reportes e historial de movimientos." />
     <title>Adonai — Control de Inventario</title>
 
@@ -14,14 +14,17 @@
         theme: {
           extend: {
             colors: {
-              // Paleta: 0a090c · f0edee · 07393c · 2c666e · 90ddf0
-              paper: "#f0edee",
-              ink: { DEFAULT: "#0a090c", soft: "#3a393d" },
+              // Paleta: #ff4759 · #ff9539 · #ffe651 · #fffb95 · #fffbde
+              paper: "#fffbde",          // --color-5: crema muy suave (fondo general)
+              ink: {
+                DEFAULT: "#1a1a1a",      // negro cálido para texto principal
+                soft: "#6b5a4e",         // marrón cálido para texto secundario
+              },
               brand: {
-                DEFAULT: "#07393c",
-                dark: "#052b2d",
-                mid: "#2c666e",
-                sky: "#90ddf0",
+                DEFAULT: "#ff4759",      // --color-1: rojo vibrante (acción principal)
+                dark: "#e02d3f",         // rojo más oscuro para hover
+                mid: "#ff9539",          // --color-2: naranja (acción secundaria)
+                sky: "#fffb95",          // --color-4: amarillo pálido (fondos suaves)
               },
             },
             fontFamily: {
