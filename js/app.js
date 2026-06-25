@@ -313,6 +313,7 @@ const TAB_TITLES = {
   "tab-inventory": "Inventario",
   "tab-reports": "Reportes",
   "tab-history": "Historial",
+  "tab-stats": "Estadísticas",
 };
 
 function isTabActive(tabId) {
@@ -333,17 +334,15 @@ function switchTab(tabId) {
   if (tabId === "tab-reports") renderReports();
   if (tabId === "tab-scan") focusScanInput();
   if (tabId === "tab-pos") focusPosInput();
+  if (tabId === "tab-stats") renderStats();
 }
 
 // ============================================================
 //  Lectura del código (lector USB tipo teclado)
 // ============================================================
 function focusScanInput() {
-  const el = $("#scan-input");
-  if (el && !anyModalOpen()) {
-    el.value = "";
-    el.focus();
-  }
+  // El campo de escaneo es de solo lectura (display), no hay input que enfocar.
+  // El lector USB opera a nivel de documento y funciona en cualquier pantalla.
 }
 
 function focusPosInput() {
@@ -356,11 +355,39 @@ function anyModalOpen() {
 }
 
 let lastScan = { code: null, time: 0 };
+let scanDisplayTimer = null;
+
+function showScanFeedback(code, found) {
+  const display = $("#scan-display");
+  const chip    = $("#scan-status-chip");
+  if (!display) return;
+  display.textContent = code;
+  display.classList.remove("text-ink/30");
+  display.classList.add("text-ink");
+  if (chip) {
+    chip.classList.remove("hidden", "bg-green-100", "text-green-700", "bg-orange-100", "text-orange-700");
+    if (found) {
+      chip.textContent = "Encontrado";
+      chip.classList.add("bg-green-100", "text-green-700");
+    } else {
+      chip.textContent = "Nuevo";
+      chip.classList.add("bg-orange-100", "text-orange-700");
+    }
+    chip.classList.remove("hidden");
+  }
+  clearTimeout(scanDisplayTimer);
+  scanDisplayTimer = setTimeout(() => {
+    display.textContent = "— — —";
+    display.classList.add("text-ink/30");
+    display.classList.remove("text-ink");
+    if (chip) chip.classList.add("hidden");
+  }, 2000);
+}
+
 function handleScannedCode(code) {
   if (!code) return;
   if (anyModalOpen()) return;
-  // En la Caja, cada escaneo suma al ticket (sin anti-rebote, para poder
-  // escanear varias unidades iguales seguidas).
+  // En la Caja, cada escaneo suma al ticket.
   if (isTabActive("tab-pos")) {
     posAddByCode(code);
     return;
@@ -369,6 +396,9 @@ function handleScannedCode(code) {
   const now = Date.now();
   if (code === lastScan.code && now - lastScan.time < 1200) return;
   lastScan = { code, time: now };
+  const found = products.find((p) => p.codigo === code);
+  // Feedback visual en el display del módulo de escaneo
+  if (isTabActive("tab-scan")) showScanFeedback(code, !!found);
   lookupCode(code);
 }
 
@@ -1355,9 +1385,186 @@ function generateUID() {
 }
 
 // ============================================================
+//  MÓDULO: ESTADÍSTICAS Y TENDENCIAS
+// ============================================================
+
+let statsperiodDays = 7;       // período activo: 7, 30 o 90 días
+let statsLoading = false;
+
+async function renderStats() {
+  if (statsLoading) return;
+  statsLoading = true;
+
+  const end   = new Date(); end.setHours(23, 59, 59, 999);
+  const start = new Date(); start.setDate(start.getDate() - statsperiodDays + 1); start.setHours(0,0,0,0);
+
+  let sales = [];
+  try {
+    sales = await salesApi.fetchRange(currentUser.uid, start, end);
+  } catch (e) {
+    if (isQuotaError && isQuotaError(e)) showQuotaBanner();
+    statsLoading = false;
+    return;
+  }
+
+  const empty = $("#stats-empty");
+  if (!sales.length) {
+    empty.classList.remove("hidden");
+    ["chart-daily","chart-hourly","chart-top-products","chart-methods"]
+      .forEach(id => { const el = $(`#${id}`); if (el) el.innerHTML = ""; });
+    $("#stats-total").textContent = "$0";
+    $("#stats-count").textContent = "0";
+    $("#stats-avg").textContent   = "$0";
+    $("#stats-best-day").textContent = "—";
+    statsLoading = false;
+    return;
+  }
+  empty.classList.add("hidden");
+
+  // ── KPIs ──────────────────────────────────────────────────
+  const total = sales.reduce((s, v) => s + (v.total || 0), 0);
+  const count = sales.length;
+  $("#stats-total").textContent = "$" + formatPrice(total);
+  $("#stats-count").textContent = count;
+  $("#stats-avg").textContent   = "$" + formatPrice(count ? total / count : 0);
+
+  // ── Ventas por día ────────────────────────────────────────
+  const byDay = {};
+  for (let d = 0; d < statsperiodDays; d++) {
+    const dt = new Date(start); dt.setDate(dt.getDate() + d);
+    byDay[dt.toISOString().slice(0,10)] = 0;
+  }
+  for (const s of sales) {
+    const k = new Date(s.ts).toISOString().slice(0,10);
+    if (k in byDay) byDay[k] += s.total || 0;
+  }
+  const dayEntries = Object.entries(byDay);
+  const maxDay = Math.max(...dayEntries.map(([,v]) => v), 1);
+  const bestDayEntry = dayEntries.reduce((a, b) => b[1] > a[1] ? b : a, dayEntries[0]);
+  const bestDt = new Date(bestDayEntry[0] + "T12:00:00");
+  $("#stats-best-day").textContent = bestDt.toLocaleDateString("es", { weekday: "short", day: "numeric", month: "short" });
+
+  // Gráfico de barras por día (SVG)
+  const barW = statsperiodDays <= 7 ? 32 : statsperiodDays <= 30 ? 16 : 8;
+  const gap   = statsperiodDays <= 7 ? 8  : statsperiodDays <= 30 ? 4  : 2;
+  const chartH = 80;
+  const svgW   = dayEntries.length * (barW + gap);
+  const dailySvg = `<svg viewBox="0 0 ${svgW} ${chartH + 24}" width="${svgW}" height="${chartH + 24}" style="min-width:100%">
+    ${dayEntries.map(([date, val], i) => {
+      const bh = val > 0 ? Math.max(4, Math.round((val / maxDay) * chartH)) : 2;
+      const x  = i * (barW + gap);
+      const y  = chartH - bh;
+      const isToday = date === new Date().toISOString().slice(0,10);
+      const color = isToday ? "#576179" : "#979fc5";
+      const label = statsperiodDays <= 30
+        ? new Date(date + "T12:00:00").toLocaleDateString("es", { day: "numeric" })
+        : "";
+      return `<rect x="${x}" y="${y}" width="${barW}" height="${bh}" rx="4" fill="${color}" opacity="${val > 0 ? 1 : 0.2}"/>
+              ${label ? `<text x="${x + barW/2}" y="${chartH + 14}" text-anchor="middle" font-size="9" fill="#979fc5">${label}</text>` : ""}`;
+    }).join("")}
+  </svg>`;
+  $("#chart-daily").innerHTML = dailySvg;
+
+  // ── Ventas por hora ───────────────────────────────────────
+  const byHour = Array(24).fill(0);
+  for (const s of sales) byHour[new Date(s.ts).getHours()] += s.total || 0;
+  const maxHour = Math.max(...byHour, 1);
+  const hBarH = 16; const hGap = 3;
+  const hChartW = 200;
+  const hourlySvg = `<svg viewBox="0 0 ${hChartW + 60} ${24 * (hBarH + hGap)}" width="100%" style="max-width:400px">
+    ${byHour.map((val, h) => {
+      const bw = val > 0 ? Math.max(4, Math.round((val / maxHour) * hChartW)) : 2;
+      const y  = h * (hBarH + hGap);
+      const label = `${String(h).padStart(2,"0")}:00`;
+      const color = val === Math.max(...byHour) ? "#576179" : "#979fc5";
+      return `<text x="32" y="${y + hBarH - 3}" text-anchor="end" font-size="10" fill="#979fc5">${label}</text>
+              <rect x="36" y="${y}" width="${bw}" height="${hBarH}" rx="3" fill="${color}" opacity="${val > 0 ? 0.85 : 0.15}"/>
+              ${val > 0 ? `<text x="${36 + bw + 4}" y="${y + hBarH - 3}" font-size="10" fill="#576179">$${formatPrice(val)}</text>` : ""}`;
+    }).join("")}
+  </svg>`;
+  $("#chart-hourly").innerHTML = hourlySvg;
+
+  // ── Top productos ─────────────────────────────────────────
+  const byProduct = {};
+  for (const sale of sales) {
+    for (const it of (sale.items || [])) {
+      const nombre = it.nombre?.replace(/\s*\(\d+g\)/, "") || it.codigo;
+      if (!byProduct[nombre]) byProduct[nombre] = { units: 0, total: 0 };
+      byProduct[nombre].units += it.pesable ? 1 : (it.cantidad || 1);
+      byProduct[nombre].total += it.pesable ? it.precio : (it.precio * (it.cantidad || 1));
+    }
+  }
+  const topProds = Object.entries(byProduct)
+    .sort((a, b) => b[1].total - a[1].total)
+    .slice(0, 8);
+
+  if (topProds.length) {
+    const maxProd = topProds[0][1].total;
+    $("#chart-top-products").innerHTML = `<div class="space-y-2">
+      ${topProds.map(([nombre, { units, total }], i) => {
+        const pct = Math.round((total / maxProd) * 100);
+        const medal = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : "";
+        return `<div>
+          <div class="mb-1 flex items-center justify-between text-xs">
+            <span class="font-medium text-ink truncate max-w-[60%]">${medal} ${escapeHtml(nombre)}</span>
+            <span class="text-ink/50">$${formatPrice(total)}</span>
+          </div>
+          <div class="h-2 w-full rounded-full bg-ink/5">
+            <div class="h-2 rounded-full bg-[#979fc5]" style="width:${pct}%"></div>
+          </div>
+        </div>`;
+      }).join("")}
+    </div>`;
+  }
+
+  // ── Métodos de pago ───────────────────────────────────────
+  const byMethod = {};
+  const METHOD_LABELS = { efectivo:"Efectivo", debito:"Débito", credito:"Crédito", transferencia:"Transferencia", qr:"QR / Billetera", otro:"Otro" };
+  for (const s of sales) {
+    const k = s.metodoPago || "otro";
+    if (!byMethod[k]) byMethod[k] = 0;
+    byMethod[k] += s.total || 0;
+  }
+  const methodEntries = Object.entries(byMethod).sort((a,b) => b[1]-a[1]);
+  const totalMethods  = methodEntries.reduce((s,[,v]) => s+v, 0);
+  const COLORS = ["#576179","#979fc5","#d5deea","#252531","#8a92b8","#b8c4d6"];
+  if (methodEntries.length) {
+    $("#chart-methods").innerHTML = `<div class="space-y-2">
+      ${methodEntries.map(([key, val], i) => {
+        const pct = totalMethods > 0 ? Math.round((val / totalMethods) * 100) : 0;
+        return `<div class="flex items-center gap-3">
+          <span class="h-3 w-3 shrink-0 rounded-full" style="background:${COLORS[i % COLORS.length]}"></span>
+          <span class="flex-1 text-sm text-ink">${METHOD_LABELS[key] || key}</span>
+          <span class="text-sm font-semibold text-ink">$${formatPrice(val)}</span>
+          <span class="w-10 text-right text-xs text-ink/40">${pct}%</span>
+        </div>`;
+      }).join("")}
+    </div>`;
+  }
+
+  statsLoading = false;
+}
+
+// ============================================================
 //  Wiring de eventos
 // ============================================================
 function bindEvents() {
+  // Selector de período de estadísticas
+  document.addEventListener("click", (e) => {
+    const btn = e.target.closest(".stats-period-btn");
+    if (!btn) return;
+    statsperiodDays = parseInt(btn.dataset.period, 10);
+    $$(".stats-period-btn").forEach((b) => {
+      const active = b === btn;
+      b.classList.toggle("bg-white", active);
+      b.classList.toggle("shadow", active);
+      b.classList.toggle("text-ink", active);
+      b.classList.toggle("text-ink/40", !active);
+    });
+    const labels = { 7: "Últimos 7 días", 30: "Últimos 30 días", 90: "Últimos 90 días" };
+    $("#stats-period-label").textContent = labels[statsperiodDays] || "";
+    renderStats();
+  });
   $("#login-form").addEventListener("submit", async (e) => {
     e.preventDefault();
     $("#login-error").classList.add("hidden");
@@ -1374,20 +1581,8 @@ function bindEvents() {
     b.addEventListener("click", () => switchTab(b.dataset.tab))
   );
 
-  // Campo de escaneo (lector USB o tipeo manual)
-  const scanInput = $("#scan-input");
-  const submitScan = () => {
-    const code = scanInput.value.trim();
-    scanInput.value = "";
-    if (code) handleScannedCode(code);
-  };
-  scanInput.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      submitScan();
-    }
-  });
-  $("#scan-go-btn").addEventListener("click", submitScan);
+  // El módulo de escaneo no tiene input manual ni botón.
+  // El lector USB escribe a nivel de documento y es capturado por BarcodeScanner.
 
   // Caja (POS)
   const posInput = $("#pos-scan-input");
