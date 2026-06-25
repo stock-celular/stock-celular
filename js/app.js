@@ -1,12 +1,26 @@
 // ============================================================
-//  Controlador principal de la app  (offline-first + tiempo real)
+//  Controlador principal de la app  (offline-first + tiempo real eficiente)
 //
-//  - Al iniciar sesión activa un listener onSnapshot sobre productos:
-//    cualquier cambio en Firestore llega automáticamente sin recargar.
-//  - Movimientos y ventas del día se descargan una vez al inicio del día.
-//  - Las escrituras van al outbox local y se suben con debounce (800 ms).
-//  - Semáforo en flushOutbox: nunca corren dos uploads en paralelo.
-//  - Si Firebase devuelve "resource-exhausted" se muestra un banner de alerta.
+//  ARQUITECTURA DE SINCRONIZACIÓN:
+//  ─────────────────────────────────────────────────────────
+//  1. Persistencia offline (IndexedDB de Firestore): los documentos
+//     se guardan en el dispositivo. Las lecturas sirven desde caché
+//     local cuando los datos no cambiaron → 0 lecturas de red.
+//
+//  2. Listener de señal (1 documento): en lugar de escuchar toda la
+//     colección de productos (N lecturas por evento), escuchamos un
+//     único doc "meta/signal" que solo tiene un timestamp.
+//     Cuando cambia → fetchAll() trae los productos frescos.
+//     Costo: 1 lectura de señal por evento, luego fetchAll desde caché.
+//
+//  3. Escrituras con touchSignal: cada save/delete/adjustStock actualiza
+//     la señal, notificando a otros dispositivos automáticamente.
+//
+//  4. Outbox con debounce (800ms): las escrituras se agrupan antes de
+//     subir, y el semáforo evita uploads paralelos.
+//
+//  Resultado: tiempo real automático sin botones, con consumo mínimo
+//  del plan gratuito de Firebase.
 //  (No necesitas editar este archivo)
 // ============================================================
 
@@ -424,9 +438,12 @@ function posPendingSearch(term) {
     if (!matches.length) { results.classList.add("hidden"); return; }
     results.innerHTML = matches.map((p) => `
       <li data-code="${escapeAttr(p.codigo)}"
-        class="flex cursor-pointer items-center justify-between px-4 py-2.5 text-sm hover:bg-brand/5 active:bg-brand/10">
-        <span class="font-medium text-ink truncate flex-1">${escapeHtml(p.nombre)}</span>
-        <span class="ml-3 shrink-0 text-xs ${p.pesable ? "text-brand font-semibold" : "text-ink/40"}">
+        class="flex cursor-pointer items-center gap-3 px-4 py-3.5 hover:bg-brand/5 active:bg-brand/10 border-b border-ink/5 last:border-0">
+        <div class="min-w-0 flex-1">
+          <p class="text-base font-semibold text-ink leading-tight">${escapeHtml(p.nombre)}</p>
+          <p class="mt-0.5 font-mono text-xs text-ink/30">${escapeHtml(p.codigo)}</p>
+        </div>
+        <span class="shrink-0 rounded-lg px-2.5 py-1 text-sm font-bold ${p.pesable ? "bg-brand/10 text-brand" : "bg-ink/5 text-ink/70"}">
           ${p.pesable ? `$${formatPrice(p.precioKilo)}/kg` : `$${formatPrice(p.precioVenta)}`}
         </span>
       </li>`).join("");
