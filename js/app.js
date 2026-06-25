@@ -759,7 +759,13 @@ function openProductForm(product = null) {
   const form = $("#product-form");
   form.reset();
   $("#product-error").classList.add("hidden");
+
+  // Estado por defecto: producto normal
   $("#pf-precio-kilo-wrap").classList.add("hidden");
+  $("#pf-minimo-wrap").classList.remove("hidden");
+  $("#pf-venta-wrap").classList.remove("hidden");
+  $("#pf-cantidad-label").textContent = "Cantidad actual";
+  $("#pf-minimo").required = true;
   $("#pf-pesable").checked = false;
 
   if (product) {
@@ -768,24 +774,29 @@ function openProductForm(product = null) {
     $("#pf-codigo").value = product.codigo;
     $("#pf-codigo").readOnly = true;
     $("#pf-codigo").classList.add("bg-paper");
-    $("#pf-generar-id").classList.add("hidden");
     $("#pf-nombre").value = product.nombre || "";
     $("#pf-cantidad").value = product.cantidad ?? 0;
-    $("#pf-minimo").value = product.stockMinimo ?? 0;
     $("#pf-costo").value = product.precioCosto ?? 0;
-    $("#pf-venta").value = product.precioVenta ?? 0;
     if (product.pesable) {
       $("#pf-pesable").checked = true;
       $("#pf-precio-kilo-wrap").classList.remove("hidden");
       $("#pf-precio-kilo").value = product.precioKilo ?? 0;
+      $("#pf-minimo-wrap").classList.add("hidden");
+      $("#pf-venta-wrap").classList.add("hidden");
+      $("#pf-cantidad-label").textContent = "Kilos disponibles";
+      $("#pf-minimo").required = false;
+    } else {
+      $("#pf-minimo").value = product.stockMinimo ?? 0;
+      $("#pf-venta").value = product.precioVenta ?? 0;
     }
     $("#product-delete-btn").classList.remove("hidden");
   } else {
     editingCode = null;
     $("#product-modal-title").textContent = "Nuevo producto";
-    $("#pf-codigo").readOnly = false;
-    $("#pf-codigo").classList.remove("bg-paper");
-    $("#pf-generar-id").classList.remove("hidden");
+    // ID de 13 dígitos generado automáticamente — no editable
+    $("#pf-codigo").value = generateUID();
+    $("#pf-codigo").readOnly = true;
+    $("#pf-codigo").classList.add("bg-paper");
     $("#product-delete-btn").classList.add("hidden");
   }
   openModal("product-modal");
@@ -793,7 +804,11 @@ function openProductForm(product = null) {
 
 function openProductFormWithCode(code) {
   openProductForm();
+  // Viene de un escaneo real: reemplaza el ID generado con el código leído
+  // y lo deja editable por si el operario necesita corregirlo.
   $("#pf-codigo").value = code;
+  $("#pf-codigo").readOnly = false;
+  $("#pf-codigo").classList.remove("bg-paper");
   $("#pf-nombre").focus();
 }
 
@@ -809,12 +824,16 @@ async function saveProduct(e) {
   const data = {
     codigo,
     nombre,
-    cantidad: parseInt($("#pf-cantidad").value, 10) || 0,
-    stockMinimo: parseInt($("#pf-minimo").value, 10) || 0,
+    cantidad: parseFloat($("#pf-cantidad").value) || 0,
     precioCosto: parseFloat($("#pf-costo").value) || 0,
-    precioVenta: parseFloat($("#pf-venta").value) || 0,
     pesable,
-    precioKilo: pesable ? (parseFloat($("#pf-precio-kilo").value) || 0) : 0,
+    ...(pesable
+      ? { precioKilo: parseFloat($("#pf-precio-kilo").value) || 0,
+          stockMinimo: 0,
+          precioVenta: 0 }
+      : { stockMinimo: parseInt($("#pf-minimo").value, 10) || 0,
+          precioVenta: parseFloat($("#pf-venta").value) || 0,
+          precioKilo: 0 }),
   };
 
   // 1) Caché local
@@ -1316,12 +1335,11 @@ function formatPrice(n) {
   return num.toLocaleString("es", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 }
 
-// Genera un ID único para productos sin código de barras.
-// Formato: "M-" + timestamp base36 + 3 chars aleatorios. Ej: M-lf3k2x-4a7
+// Genera un ID de 13 dígitos aleatorios para productos sin código de barras.
 function generateUID() {
-  const ts = Date.now().toString(36);
-  const rand = Math.random().toString(36).slice(2, 5);
-  return `M-${ts}-${rand}`;
+  let id = "";
+  while (id.length < 13) id += Math.floor(Math.random() * 10);
+  return id;
 }
 
 // ============================================================
@@ -1404,16 +1422,19 @@ function bindEvents() {
   });
   $("#weigh-confirm-btn").addEventListener("click", confirmWeigh);
 
-  // Botón generar ID automático
-  $("#pf-generar-id").addEventListener("click", () => {
-    $("#pf-codigo").value = generateUID();
-  });
-
-  // Toggle pesable: muestra/oculta precio por kilo
+  // Toggle pesable: ajusta campos visibles según el tipo de producto
   $("#pf-pesable").addEventListener("change", () => {
     const isPesable = $("#pf-pesable").checked;
     $("#pf-precio-kilo-wrap").classList.toggle("hidden", !isPesable);
-    if (isPesable) setTimeout(() => $("#pf-precio-kilo").focus(), 50);
+    $("#pf-minimo-wrap").classList.toggle("hidden", isPesable);
+    $("#pf-venta-wrap").classList.toggle("hidden", isPesable);
+    $("#pf-cantidad-label").textContent = isPesable ? "Kilos disponibles" : "Cantidad actual";
+    $("#pf-minimo").required = !isPesable;
+    if (isPesable) {
+      $("#pf-minimo").value = 0;
+      $("#pf-venta").value = 0;
+      setTimeout(() => $("#pf-precio-kilo").focus(), 50);
+    }
   });
 
   // Exportar a Excel
