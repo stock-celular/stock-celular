@@ -254,10 +254,9 @@
             <h2 class="text-base font-semibold text-ink">Escanear producto</h2>
             <p class="mt-1 text-sm text-ink/50">Apuntá el lector al código de barras. Si el producto existe podés modificarlo; si no existe, lo podés crear.</p>
 
-            <!-- Estado del lector -->
-            <div id="scanner-status-bar" class="mt-4 flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm transition-colors bg-red-50 ring-1 ring-red-200">
-              <span id="scanner-dot" class="h-2.5 w-2.5 shrink-0 rounded-full bg-red-500"></span>
-              <span id="scanner-status-text" class="text-red-600 font-medium">Lector no detectado — escaneá cualquier código para verificar</span>
+            <div class="mt-4 flex items-center gap-2 rounded-xl bg-paper px-3 py-2.5 text-sm text-ink/70">
+              <span class="flex h-2.5 w-2.5 shrink-0 animate-pulse rounded-full bg-brand"></span>
+              Lector listo — Escanea cuando quieras
             </div>
 
             <label class="mb-1 mt-4 block text-sm font-medium text-ink/80">Último código escaneado</label>
@@ -268,7 +267,7 @@
             </div>
 
             <p class="mt-3 text-xs text-ink/40">
-              Compatible con lectores USB tipo teclado (2D 7100N y similares). El punto verde confirma que el lector está activo.
+              Compatible con lectores USB tipo teclado (2D 7100N y similares). Dejá esta pantalla abierta para escanear varios productos seguidos.
             </p>
           </div>
         </section>

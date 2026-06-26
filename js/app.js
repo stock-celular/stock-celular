@@ -332,15 +332,7 @@ function switchTab(tabId) {
   $("#header-title").textContent = TAB_TITLES[tabId] || "Inventario";
 
   if (tabId === "tab-reports") renderReports();
-  if (tabId === "tab-scan") {
-    focusScanInput();
-    // Refresca el indicador cada 5s mientras el tab está abierto
-    clearInterval(scannerStatusTimer);
-    updateScannerStatus();
-    scannerStatusTimer = setInterval(updateScannerStatus, 5000);
-  } else {
-    clearInterval(scannerStatusTimer);
-  }
+  if (tabId === "tab-scan") focusScanInput();
   if (tabId === "tab-pos") focusPosInput();
   if (tabId === "tab-stats") renderStats();
 }
@@ -364,32 +356,6 @@ function anyModalOpen() {
 
 let lastScan = { code: null, time: 0 };
 let scanDisplayTimer = null;
-const SCANNER_TIMEOUT_MS = 30_000; // 30s sin escaneo → rojo
-let scannerStatusTimer = null;
-
-function updateScannerStatus(justScanned = false) {
-  const bar  = $("#scanner-status-bar");
-  const dot  = $("#scanner-dot");
-  const text = $("#scanner-status-text");
-  if (!bar) return;
-
-  const elapsed = Date.now() - lastScan.time;
-  const active  = lastScan.time > 0 && elapsed < SCANNER_TIMEOUT_MS;
-
-  if (active) {
-    bar.className  = "mt-4 flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm transition-colors bg-green-50 ring-1 ring-green-200";
-    dot.className  = "h-2.5 w-2.5 shrink-0 rounded-full bg-green-500 animate-pulse";
-    text.className = "text-green-700 font-medium";
-    text.textContent = "Lector conectado — listo para escanear";
-  } else {
-    bar.className  = "mt-4 flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm transition-colors bg-red-50 ring-1 ring-red-200";
-    dot.className  = "h-2.5 w-2.5 shrink-0 rounded-full bg-red-500";
-    text.className = "text-red-600 font-medium";
-    text.textContent = lastScan.time === 0
-      ? "Lector no detectado — escaneá cualquier código para verificar"
-      : "Lector inactivo — volvé a escanear para confirmar conexión";
-  }
-}
 
 function showScanFeedback(code, found) {
   const display = $("#scan-display");
@@ -421,16 +387,15 @@ function showScanFeedback(code, found) {
 function handleScannedCode(code) {
   if (!code) return;
   if (anyModalOpen()) return;
-  // Registra el tiempo del último escaneo (para el indicador de estado)
-  lastScan = { code, time: Date.now() };
-  updateScannerStatus();
   // En la Caja, cada escaneo suma al ticket.
   if (isTabActive("tab-pos")) {
     posAddByCode(code);
     return;
   }
   // Anti-rebote: ignora el mismo código repetido en menos de 1.2 s
-  // (ya registramos el tiempo arriba, solo saltamos la acción)
+  const now = Date.now();
+  if (code === lastScan.code && now - lastScan.time < 1200) return;
+  lastScan = { code, time: now };
   const found = products.find((p) => p.codigo === code);
   // Feedback visual en el display del módulo de escaneo
   if (isTabActive("tab-scan")) showScanFeedback(code, !!found);
@@ -540,7 +505,7 @@ function confirmWeigh() {
   if (!prod) return;
   const gramos = parseFloat($("#weigh-grams").value) || 0;
   if (gramos <= 0) { showToast("Ingresá los gramos", "error"); return; }
-  const precio = (prod.precioKilo * gramos) / 1000;
+  const precio = Math.round((prod.precioKilo * gramos) / 1000);
   // Cada pesada es una línea separada en el carrito (identificador único por timestamp)
   const uid = `${prod.codigo}-${Date.now()}`;
   cart.push({
@@ -1650,7 +1615,7 @@ function bindEvents() {
     const prod = pendingWeighProduct;
     if (!prod) return;
     const g = parseFloat($("#weigh-grams").value) || 0;
-    const precio = (prod.precioKilo * g) / 1000;
+    const precio = Math.round((prod.precioKilo * g) / 1000);
     const preview = $("#weigh-preview");
     if (g > 0) {
       $("#weigh-preview-price").textContent = "$" + formatPrice(precio);
