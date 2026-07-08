@@ -1,33 +1,70 @@
 /* =============================================
-   PALETA DE COLORES
-   --color-1: #ff4759  (rojo vibrante)
-   --color-2: #ff9539  (naranja)
-   --color-3: #ffe651  (amarillo)
-   --color-4: #fffb95  (amarillo pálido)
-   --color-5: #fffbde  (crema muy suave)
+   PALETA MONOCROMÁTICA (escala de negros)
+   --color-1: #0a0a0a  (negro)
+   --color-2: #333333  (gris muy oscuro)
+   --color-3: #5c5c5c  (gris medio)
+   --color-4: #d4d4d4  (gris claro)
+   --color-5: #f4f4f4  (gris casi blanco)
    ============================================= */
 
 :root {
-  --color-1: #ff4759;
-  --color-2: #ff9539;
-  --color-3: #ffe651;
-  --color-4: #fffb95;
-  --color-5: #fffbde;
+  --color-1: #0a0a0a;
+  --color-2: #333333;
+  --color-3: #5c5c5c;
+  --color-4: #d4d4d4;
+  --color-5: #f4f4f4;
 
   /* Aliases semánticos */
-  --color-bg:           #fff8f0;          /* fondo general: cálido suave */
-  --color-surface:      #ffffff;          /* superficies (cards, modales) */
-  --color-border:       var(--color-4);   /* bordes suaves */
-  --color-text-primary: #1a1a1a;          /* texto principal: negro para contraste */
-  --color-text-muted:   #6b5a4e;          /* texto secundario: marrón cálido */
-  --color-accent:       var(--color-1);   /* botones, links */
-  --color-accent-light: var(--color-2);   /* hover, badges */
-  --color-highlight:    var(--color-3);   /* chips, etiquetas destacadas */
+  --color-bg:           var(--color-5);  /* fondo general */
+  --color-surface:      #ffffff;         /* superficies (cards, modales) */
+  --color-border:       var(--color-4);  /* bordes suaves */
+  --color-outline:      var(--color-1);  /* contorno resaltado */
+  --color-text-primary: var(--color-1);
+  --color-text-muted:   var(--color-3);
+  --color-accent:       var(--color-1);
+  --color-accent-light: var(--color-2);
+  --color-highlight:    var(--color-4);
 }
 
 /* Estilos complementarios a Tailwind */
 
-/* ─── Modales tipo "bottom sheet" en móvil ─── */
+/* ─── Contornos resaltados (vista de escritorio) ───
+   Botones, campos y "cuadros" (cards con ring/shadow) llevan
+   borde negro visible en lugar de sombras suaves. */
+
+button {
+  border: 1.5px solid var(--color-outline) !important;
+}
+
+/* Excepciones: navegación, cerrar sesión y botones "fantasma" de modales */
+.nav-btn,
+#logout-btn,
+[data-close] {
+  border: none !important;
+}
+
+input,
+select,
+textarea {
+  border: 1.5px solid var(--color-outline) !important;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  border-color: var(--color-outline) !important;
+  box-shadow: 0 0 0 2px rgba(10, 10, 10, 0.25) !important;
+}
+
+/* Cards y paneles: Tailwind los marca con ring-1 o shadow-sm */
+.ring-1,
+.shadow-sm {
+  box-shadow: none !important;
+  border: 1.5px solid var(--color-outline) !important;
+}
+
+/* ─── Modales tipo "bottom sheet" en móvil / diálogo en escritorio ─── */
 .modal {
   position: fixed;
   inset: 0;
@@ -44,7 +81,7 @@
 .modal-backdrop {
   position: absolute;
   inset: 0;
-  background: rgba(26, 10, 10, 0.45);    /* oscuro cálido con opacidad */
+  background: rgba(0, 0, 0, 0.55);
   animation: fade-in 0.15s ease-out;
 }
 
@@ -53,12 +90,13 @@
   width: 100%;
   max-width: 32rem;
   background: var(--color-surface);
-  border-top: 3px solid var(--color-2);
+  border: 2px solid var(--color-outline);
+  border-bottom: none;
   border-top-left-radius: 1.25rem;
   border-top-right-radius: 1.25rem;
   padding: 1.25rem;
   padding-bottom: calc(1.25rem + env(safe-area-inset-bottom, 0px));
-  box-shadow: 0 -8px 30px rgba(255, 71, 89, 0.10);
+  box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.2);
   animation: slide-up 0.2s ease-out;
 }
 
@@ -73,14 +111,14 @@
   margin: 0 auto 1rem;
 }
 
-@media (min-width: 640px) {
+/* Desktop-first: desde 768px el modal es un diálogo centrado */
+@media (min-width: 768px) {
   .modal {
     align-items: center;
   }
   .modal-sheet {
     border-radius: 1.25rem;
-    border-top: none;
-    border: 1px solid var(--color-border);
+    border: 2px solid var(--color-outline);
     margin: 1rem;
   }
   .modal-sheet::before {
@@ -101,9 +139,9 @@
 
 /* ─── Barra lateral: ítem activo ─── */
 .nav-side.nav-active {
-  background: rgba(255, 149, 57, 0.12);  /* --color-2 suavizado */
-  border-left: 3px solid var(--color-1);
-  color: #1a1a1a;
+  background: rgba(0, 0, 0, 0.06);
+  border-left: 3px solid var(--color-1) !important;
+  color: var(--color-1);
 }
 
 /* ─── Clases de color de la paleta (utilidades) ─── */
@@ -118,3 +156,8 @@
 .bg-color3 { background-color: var(--color-3); }
 .bg-color4 { background-color: var(--color-4); }
 .bg-color5 { background-color: var(--color-5); }
+
+/* ─── Bajo stock: acento rojo ─── */
+.inv-filter-low {
+  border-color: #dc2626 !important;
+}

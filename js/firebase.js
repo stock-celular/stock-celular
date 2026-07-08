@@ -164,12 +164,16 @@ export const movementsApi = {
 export const salesApi = {
   async commit(uid, sale) {
     for (const it of sale.items) {
-      await updateDoc(productDoc(uid, it.codigo), {
-        cantidad: increment(-it.cantidad),
-        actualizado: serverTimestamp(),
-      });
+      // Pesables: no llevan control de stock (su "código" de línea es
+      // un identificador de pesada, no un documento de producto).
+      if (!it.pesable) {
+        await updateDoc(productDoc(uid, it.codigo), {
+          cantidad: increment(-it.cantidad),
+          actualizado: serverTimestamp(),
+        });
+      }
       await addDoc(movementsCol(uid), {
-        codigo: it.codigo,
+        codigo: it.pesable ? (it.codigoBase || it.codigo) : it.codigo,
         nombre: it.nombre,
         accion: "salida",
         cantidad: it.cantidad,

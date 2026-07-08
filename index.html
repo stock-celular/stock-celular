@@ -3,9 +3,9 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <meta name="theme-color" content="#ff4759" />
+    <meta name="theme-color" content="#000000" />
     <meta name="description" content="Control de stock privado para pequeño negocio. Escaneo de código de barras, entradas y salidas, alertas de stock mínimo, reportes e historial de movimientos." />
-    <title>Adonai — Control de Inventario prueba</title>
+    <title>Adonai</title>
 
     <!-- Tailwind (Play CDN: rápido para empezar; ver README para build de producción) -->
     <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
@@ -14,17 +14,17 @@
         theme: {
           extend: {
             colors: {
-              // Paleta: #ff4759 · #ff9539 · #ffe651 · #fffb95 · #fffbde
-              paper: "#fffbde",          // --color-5: crema muy suave (fondo general)
+              // Paleta monocromática (escala de negros)
+              paper: "#f4f4f4",          // fondo general: gris muy claro
               ink: {
-                DEFAULT: "#1a1a1a",      // negro cálido para texto principal
-                soft: "#6b5a4e",         // marrón cálido para texto secundario
+                DEFAULT: "#0a0a0a",      // negro para texto principal
+                soft: "#4a4a4a",         // gris oscuro para texto secundario
               },
               brand: {
-                DEFAULT: "#ff4759",      // --color-1: rojo vibrante (acción principal)
-                dark: "#e02d3f",         // rojo más oscuro para hover
-                mid: "#ff9539",          // --color-2: naranja (acción secundaria)
-                sky: "#fffb95",          // --color-4: amarillo pálido (fondos suaves)
+                DEFAULT: "#0a0a0a",      // negro (acción principal)
+                dark: "#333333",         // gris oscuro para hover
+                mid: "#5c5c5c",          // gris medio (acción secundaria)
+                sky: "#e5e5e5",          // gris claro (fondos suaves)
               },
             },
             fontFamily: {
@@ -107,10 +107,10 @@
 
     <!-- ============ APP ============ -->
     <div id="app-view" class="hidden">
-     <div class="lg:flex lg:min-h-screen">
+     <div class="md:flex md:min-h-screen">
 
       <!-- ===== Sidebar (notebook) ===== -->
-      <aside class="hidden w-60 shrink-0 flex-col border-r border-ink/10 bg-white lg:flex">
+      <aside class="hidden w-60 shrink-0 flex-col border-r border-ink/10 bg-white md:flex">
         <div class="flex items-center gap-2 border-b border-ink/10 px-5 py-4">
           <span class="flex h-9 w-9 items-center justify-center rounded-lg bg-brand text-white">
             <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -149,11 +149,11 @@
       </aside>
 
       <!-- ===== Columna de contenido ===== -->
-      <div class="flex min-w-0 flex-1 flex-col pb-24 lg:pb-0">
+      <div class="flex min-w-0 flex-1 flex-col pb-24 md:pb-0">
       <!-- Header -->
       <header class="sticky top-0 z-20 flex items-center justify-between border-b border-ink/10 bg-white px-4 py-3">
         <div class="flex items-center gap-2">
-          <span class="flex h-8 w-8 items-center justify-center rounded-lg bg-brand text-white lg:hidden">
+          <span class="flex h-8 w-8 items-center justify-center rounded-lg bg-brand text-white md:hidden">
             <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
               <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" stroke-linecap="round" stroke-linejoin="round"></path>
             </svg>
@@ -169,14 +169,14 @@
         </button>
       </header>
 
-      <main class="mx-auto w-full max-w-2xl px-4 py-4 lg:max-w-5xl lg:px-8 lg:py-8">
+      <main class="mx-auto w-full max-w-2xl px-4 py-4 md:max-w-6xl md:px-8 md:py-8">
         <!-- ====== TAB: CAJA (POS) ====== -->
         <section id="tab-pos" class="tab-panel">
-          <div class="lg:grid lg:grid-cols-3 lg:gap-6">
+          <div class="md:grid md:grid-cols-3 md:gap-6">
 
             <!-- Columna: carrito -->
-            <div class="lg:col-span-2">
-              <div class="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-ink/10 lg:p-5">
+            <div class="md:col-span-2">
+              <div class="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-ink/10 md:p-5">
                 <h2 class="text-base font-semibold text-ink">Nueva venta</h2>
                 <p class="mt-1 text-sm text-ink/50">Escanea los productos para sumarlos al ticket.</p>
 
@@ -203,8 +203,8 @@
             </div>
 
             <!-- Columna: cobro -->
-            <div class="mt-4 lg:mt-0">
-              <div class="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-ink/10 lg:sticky lg:top-8 lg:p-5">
+            <div class="mt-4 md:mt-0">
+              <div class="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-ink/10 md:sticky md:top-8 md:p-5">
                 <div class="flex items-center justify-between text-sm text-ink/60">
                   <span>Artículos</span>
                   <span id="pos-count" class="font-semibold text-ink">0</span>
@@ -307,9 +307,16 @@
             </div>
           </div>
 
-          <div id="low-stock-banner" class="mb-3 hidden items-center gap-2 rounded-xl bg-ink px-4 py-3 text-sm text-paper">
-            <svg class="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-            <span id="low-stock-text"></span>
+          <!-- Filtro: todos / bajo stock -->
+          <div id="inventory-filter" class="mb-3 flex gap-2">
+            <button type="button" data-filter="all"
+              class="inv-filter-btn rounded-xl bg-brand px-4 py-2 text-sm font-semibold text-white transition active:scale-95">
+              Todos
+            </button>
+            <button type="button" data-filter="low"
+              class="inv-filter-btn inv-filter-low rounded-xl bg-white px-4 py-2 text-sm font-semibold text-red-600 transition active:scale-95 hover:bg-red-50">
+              Bajo stock <span id="inv-low-count" class="ml-1 hidden rounded-full bg-red-600 px-1.5 text-xs text-white"></span>
+            </button>
           </div>
 
           <ul id="inventory-list" class="space-y-2"></ul>
@@ -318,8 +325,8 @@
 
         <!-- ====== TAB: REPORTES ====== -->
         <section id="tab-reports" class="tab-panel hidden">
-          <h2 class="flex items-center gap-2 text-base font-semibold text-[#576179]">
-            <svg class="h-4 w-4 text-[#979fc5]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+          <h2 class="flex items-center gap-2 text-base font-semibold text-[#1a1a1a]">
+            <svg class="h-4 w-4 text-[#8a8a8a]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
             Ventas de hoy
           </h2>
           <p class="mt-1 text-sm text-ink/50">Lo cobrado en la caja durante el día.</p>
@@ -339,12 +346,19 @@
             </div>
           </div>
 
-          <h3 class="mt-5 text-[11px] font-semibold uppercase tracking-wide text-[#979fc5]">Por método de pago</h3>
+          <h3 class="mt-5 text-[11px] font-semibold uppercase tracking-wide text-[#8a8a8a]">Por método de pago</h3>
           <ul id="rep-methods" class="mt-2 space-y-2"></ul>
           <p id="rep-methods-empty" class="hidden rounded-xl bg-white px-4 py-6 text-center text-sm text-ink/40 ring-1 ring-ink/10">Todavía no hay ventas hoy.</p>
 
-          <h2 class="mt-8 flex items-center gap-2 text-base font-semibold text-[#576179]">
-            <svg class="h-4 w-4 text-[#979fc5]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+          <h3 class="mt-5 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-[#8a8a8a]">
+            <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+            Vendido por peso (hoy)
+          </h3>
+          <ul id="rep-weighed" class="mt-2 space-y-2"></ul>
+          <p id="rep-weighed-empty" class="hidden rounded-xl bg-white px-4 py-6 text-center text-sm text-ink/40 ring-1 ring-ink/10">Hoy no se vendieron productos pesables.</p>
+
+          <h2 class="mt-8 flex items-center gap-2 text-base font-semibold text-[#1a1a1a]">
+            <svg class="h-4 w-4 text-[#8a8a8a]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
             Resumen de inventario
           </h2>
           <p class="mt-1 text-sm text-ink/50">Una foto del estado actual de tu negocio.</p>
@@ -377,7 +391,7 @@
           </div>
 
           <!-- Movimientos de hoy -->
-          <h3 class="mt-6 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-[#979fc5]">
+          <h3 class="mt-6 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-[#8a8a8a]">
             <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M8 21H5a2 2 0 0 0-2-2v-3M21 16v3a2 2 0 0 1-2 2h-3"/></svg>
             Movimientos de hoy
           </h3>
@@ -401,7 +415,7 @@
           </div>
 
           <!-- Stock bajo -->
-          <h3 class="mt-6 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-red-500">
+          <h3 class="mt-6 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-red-600">
             <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
             Stock bajo el mínimo
           </h3>
@@ -409,13 +423,13 @@
           <p id="rep-low-empty" class="hidden rounded-xl bg-white px-4 py-6 text-center text-sm text-ink/40 ring-1 ring-ink/10">Todo en orden: ningún producto bajo el mínimo.</p>
 
           <!-- ====== Exportar a Excel ====== -->
-          <h2 class="mt-8 flex items-center gap-2 text-base font-semibold text-[#576179]">
-            <svg class="h-4 w-4 text-[#979fc5]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg>
+          <h2 class="mt-8 flex items-center gap-2 text-base font-semibold text-[#1a1a1a]">
+            <svg class="h-4 w-4 text-[#8a8a8a]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg>
             Exportar a Excel
           </h2>
           <p class="mt-1 text-sm text-ink/50">Descargá planillas .xlsx del inventario y de las ventas de caja.</p>
 
-          <div class="mt-4 space-y-4 lg:grid lg:grid-cols-2 lg:gap-4 lg:space-y-0">
+          <div class="mt-4 space-y-4 md:grid md:grid-cols-2 md:gap-4 md:space-y-0">
             <!-- Inventario -->
             <div class="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-ink/10">
               <h3 class="text-sm font-semibold text-ink">Inventario</h3>
@@ -477,8 +491,8 @@
           <!-- Selector de período -->
           <div class="flex items-center justify-between">
             <div>
-              <h2 class="flex items-center gap-2 text-base font-semibold text-[#576179]">
-                <svg class="h-4 w-4 text-[#979fc5]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+              <h2 class="flex items-center gap-2 text-base font-semibold text-[#1a1a1a]">
+                <svg class="h-4 w-4 text-[#8a8a8a]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
                 Estadísticas
               </h2>
               <p id="stats-period-label" class="mt-0.5 text-xs text-ink/40">Últimos 7 días</p>
@@ -512,25 +526,25 @@
 
           <!-- Gráfico: ventas por día -->
           <div class="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-ink/10">
-            <h3 class="mb-3 text-[11px] font-semibold uppercase tracking-wide text-[#979fc5]">Ventas por día</h3>
+            <h3 class="mb-3 text-[11px] font-semibold uppercase tracking-wide text-[#8a8a8a]">Ventas por día</h3>
             <div id="chart-daily" class="w-full overflow-x-auto"></div>
           </div>
 
           <!-- Gráfico: ventas por hora -->
           <div class="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-ink/10">
-            <h3 class="mb-3 text-[11px] font-semibold uppercase tracking-wide text-[#979fc5]">Horarios más activos</h3>
+            <h3 class="mb-3 text-[11px] font-semibold uppercase tracking-wide text-[#8a8a8a]">Horarios más activos</h3>
             <div id="chart-hourly" class="w-full"></div>
           </div>
 
           <!-- Top productos -->
           <div class="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-ink/10">
-            <h3 class="mb-3 text-[11px] font-semibold uppercase tracking-wide text-[#979fc5]">Productos más vendidos</h3>
+            <h3 class="mb-3 text-[11px] font-semibold uppercase tracking-wide text-[#8a8a8a]">Productos más vendidos</h3>
             <div id="chart-top-products" class="w-full"></div>
           </div>
 
           <!-- Métodos de pago -->
           <div class="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-ink/10">
-            <h3 class="mb-3 text-[11px] font-semibold uppercase tracking-wide text-[#979fc5]">Métodos de pago</h3>
+            <h3 class="mb-3 text-[11px] font-semibold uppercase tracking-wide text-[#8a8a8a]">Métodos de pago</h3>
             <div id="chart-methods" class="w-full"></div>
           </div>
 
@@ -544,7 +558,7 @@
      </div><!-- /wrapper notebook -->
 
       <!-- Bottom nav (celular) -->
-      <nav class="fixed inset-x-0 bottom-0 z-20 border-t border-ink/10 bg-white lg:hidden">
+      <nav class="fixed inset-x-0 bottom-0 z-20 border-t border-ink/10 bg-white md:hidden">
         <div class="mx-auto grid max-w-2xl grid-cols-6">
           <button data-tab="tab-pos" class="nav-btn flex flex-col items-center gap-1 py-2.5 text-brand">
             <svg class="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="21" r="1"/><circle cx="19" cy="21" r="1"/><path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12"/></svg>
@@ -671,7 +685,7 @@
           </div>
           <div class="grid grid-cols-2 gap-3">
             <div>
-              <label for="pf-costo" class="mb-1 block text-sm font-medium text-ink/80">Precio costo</label>
+              <label for="pf-costo" id="pf-costo-label" class="mb-1 block text-sm font-medium text-ink/80">Precio costo</label>
               <input id="pf-costo" type="number" inputmode="decimal" min="0" step="0.01" placeholder="0"
                 class="w-full rounded-xl border-ink/15 text-base focus:border-brand focus:ring-brand" />
             </div>

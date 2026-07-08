@@ -121,7 +121,7 @@ function showQuotaBanner() {
   banner = document.createElement("div");
   banner.id = "quota-banner";
   banner.className =
-    "fixed inset-x-0 top-0 z-50 flex items-start gap-3 bg-red-600 px-4 py-3 text-white shadow-lg";
+    "fixed inset-x-0 top-0 z-50 flex items-start gap-3 bg-black px-4 py-3 text-white shadow-lg";
   banner.innerHTML = `
     <svg class="mt-0.5 h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
     <div class="flex-1 text-sm">
@@ -283,7 +283,7 @@ async function refreshSyncUI() {
   // Punto de color: amarillo=pendiente, verde=ok, gris=sin datos
   const dotClass = syncing || pending > 0
     ? "bg-yellow-400"
-    : meta?.ts ? "bg-green-500" : "bg-ink/30";
+    : meta?.ts ? "bg-ink" : "bg-ink/30";
   if (dot) dot.className = `h-2 w-2 shrink-0 rounded-full ${dotClass}`;
 
   if (syncing) {
@@ -365,13 +365,13 @@ function showScanFeedback(code, found) {
   display.classList.remove("text-ink/30");
   display.classList.add("text-ink");
   if (chip) {
-    chip.classList.remove("hidden", "bg-green-100", "text-green-700", "bg-orange-100", "text-orange-700");
+    chip.classList.remove("hidden", "bg-ink", "text-white", "bg-ink/10", "text-ink");
     if (found) {
       chip.textContent = "Encontrado";
-      chip.classList.add("bg-green-100", "text-green-700");
+      chip.classList.add("bg-ink", "text-white");
     } else {
       chip.textContent = "Nuevo";
-      chip.classList.add("bg-orange-100", "text-orange-700");
+      chip.classList.add("bg-ink/10", "text-ink");
     }
     chip.classList.remove("hidden");
   }
@@ -500,12 +500,18 @@ function openWeighModal(prod) {
   setTimeout(() => $("#weigh-grams").focus(), 120);
 }
 
+// Redondea a la decena más cercana (355 → 360, 352 → 350).
+// Se usa para precios de pesables, que casi nunca dan cifras "cobrables".
+function roundToTen(n) {
+  return Math.round(n / 10) * 10;
+}
+
 function confirmWeigh() {
   const prod = pendingWeighProduct;
   if (!prod) return;
   const gramos = parseFloat($("#weigh-grams").value) || 0;
   if (gramos <= 0) { showToast("Ingresá los gramos", "error"); return; }
-  const precio = Math.round((prod.precioKilo * gramos) / 1000);
+  const precio = roundToTen((prod.precioKilo * gramos) / 1000);
   // Cada pesada es una línea separada en el carrito (identificador único por timestamp)
   const uid = `${prod.codigo}-${Date.now()}`;
   cart.push({
@@ -514,7 +520,9 @@ function confirmWeigh() {
     precio,        // precio final ya calculado
     cantidad: 1,
     pesable: true,
+    gramos,
     codigoBase: prod.codigo,
+    nombreBase: prod.nombre,
   });
   closeModal("weigh-modal");
   pendingWeighProduct = null;
@@ -667,7 +675,8 @@ async function posCharge() {
     return;
   }
   for (const c of cart) {
-    if (c.cantidad > stockOf(c.codigo)) {
+    // Pesables: sin control de stock, no se valida cantidad
+    if (!c.pesable && c.cantidad > stockOf(c.codigo)) {
       showToast(`Sin stock suficiente de ${c.nombre}`, "error");
       return;
     }
@@ -678,6 +687,10 @@ async function posCharge() {
     nombre: c.nombre,
     precio: c.precio,
     cantidad: c.cantidad,
+    pesable: !!c.pesable,
+    gramos: c.gramos || 0,
+    codigoBase: c.codigoBase || null,
+    nombreBase: c.nombreBase || null,
   }));
   const total = cartTotal();
   const sale = { items, total, metodoPago: posMethod, ts: Date.now() };
@@ -685,16 +698,18 @@ async function posCharge() {
 
   // 1) Actualiza el dispositivo al instante: stock, movimientos y venta.
   for (const it of items) {
-    const idx = products.findIndex((p) => p.codigo === it.codigo);
-    if (idx >= 0) {
-      products[idx] = {
-        ...products[idx],
-        cantidad: (products[idx].cantidad ?? 0) - it.cantidad,
-      };
-      await localDB.putProduct(products[idx]);
+    if (!it.pesable) {
+      const idx = products.findIndex((p) => p.codigo === it.codigo);
+      if (idx >= 0) {
+        products[idx] = {
+          ...products[idx],
+          cantidad: (products[idx].cantidad ?? 0) - it.cantidad,
+        };
+        await localDB.putProduct(products[idx]);
+      }
     }
     const mov = {
-      codigo: it.codigo,
+      codigo: it.pesable ? (it.codigoBase || it.codigo) : it.codigo,
       nombre: it.nombre,
       accion: "salida",
       cantidad: it.cantidad,
@@ -804,9 +819,12 @@ function openProductForm(product = null) {
 
   // Estado por defecto: producto normal
   $("#pf-precio-kilo-wrap").classList.add("hidden");
+  $("#pf-cantidad-wrap").classList.remove("hidden");
   $("#pf-minimo-wrap").classList.remove("hidden");
   $("#pf-venta-wrap").classList.remove("hidden");
   $("#pf-cantidad-label").textContent = "Cantidad actual";
+  $("#pf-costo-label").textContent = "Precio costo";
+  $("#pf-cantidad").required = true;
   $("#pf-minimo").required = true;
   $("#pf-pesable").checked = false;
 
@@ -823,9 +841,12 @@ function openProductForm(product = null) {
       $("#pf-pesable").checked = true;
       $("#pf-precio-kilo-wrap").classList.remove("hidden");
       $("#pf-precio-kilo").value = product.precioKilo ?? 0;
+      // Pesable: sin control de stock — solo precios por kilo
+      $("#pf-cantidad-wrap").classList.add("hidden");
       $("#pf-minimo-wrap").classList.add("hidden");
       $("#pf-venta-wrap").classList.add("hidden");
-      $("#pf-cantidad-label").textContent = "Kilos disponibles";
+      $("#pf-costo-label").textContent = "Costo por kilo";
+      $("#pf-cantidad").required = false;
       $("#pf-minimo").required = false;
     } else {
       $("#pf-minimo").value = product.stockMinimo ?? 0;
@@ -866,7 +887,8 @@ async function saveProduct(e) {
   const data = {
     codigo,
     nombre,
-    cantidad: parseFloat($("#pf-cantidad").value) || 0,
+    // Pesables: sin control de stock (la cantidad no se registra)
+    cantidad: pesable ? 0 : parseFloat($("#pf-cantidad").value) || 0,
     precioCosto: parseFloat($("#pf-costo").value) || 0,
     pesable,
     ...(pesable
@@ -915,32 +937,55 @@ async function deleteProduct() {
 // ============================================================
 //  Render: Inventario
 // ============================================================
+let inventoryFilter = "all"; // "all" | "low"
+
+function isLowStock(p) {
+  if (p.pesable) return false; // pesables no llevan control de stock
+  return (p.cantidad ?? 0) <= (p.stockMinimo ?? 0);
+}
+
 function renderInventory() {
   const term = $("#inventory-search").value.trim().toLowerCase();
   const list = $("#inventory-list");
-  const filtered = products.filter(
+  let filtered = products.filter(
     (p) =>
       !term ||
       (p.nombre || "").toLowerCase().includes(term) ||
       (p.codigo || "").includes(term)
   );
+  if (inventoryFilter === "low") filtered = filtered.filter(isLowStock);
 
-  const lowStock = products.filter((p) => (p.cantidad ?? 0) <= (p.stockMinimo ?? 0));
-  const banner = $("#low-stock-banner");
-  if (lowStock.length > 0) {
-    $("#low-stock-text").textContent =
-      lowStock.length === 1
-        ? "1 producto en o bajo el stock mínimo"
-        : `${lowStock.length} productos en o bajo el stock mínimo`;
-    banner.classList.remove("hidden");
-    banner.classList.add("flex");
-  } else {
-    banner.classList.add("hidden");
-    banner.classList.remove("flex");
+  // Contador rojo en el botón "Bajo stock"
+  const lowCount = products.filter(isLowStock).length;
+  const countEl = $("#inv-low-count");
+  if (countEl) {
+    countEl.textContent = lowCount;
+    countEl.classList.toggle("hidden", lowCount === 0);
   }
 
+  // Estado visual de los botones de filtro
+  document.querySelectorAll(".inv-filter-btn").forEach((b) => {
+    const active = b.dataset.filter === inventoryFilter;
+    if (b.dataset.filter === "low") {
+      b.classList.toggle("bg-red-600", active);
+      b.classList.toggle("text-white", active);
+      b.classList.toggle("bg-white", !active);
+      b.classList.toggle("text-red-600", !active);
+    } else {
+      b.classList.toggle("bg-brand", active);
+      b.classList.toggle("text-white", active);
+      b.classList.toggle("bg-white", !active);
+      b.classList.toggle("text-ink", !active);
+    }
+  });
+
   renderInventorySummary();
-  $("#inventory-empty").classList.toggle("hidden", products.length > 0);
+  const emptyEl = $("#inventory-empty");
+  emptyEl.textContent =
+    inventoryFilter === "low" && products.length > 0
+      ? "Ningún producto está bajo el stock mínimo."
+      : "No hay productos todavía. Toca el botón + para agregar el primero.";
+  emptyEl.classList.toggle("hidden", filtered.length > 0);
   list.innerHTML = filtered.map(renderProductCard).join("");
 
   list.querySelectorAll("[data-edit]").forEach((el) => {
@@ -982,29 +1027,29 @@ function renderInventorySummary() {
 function renderProductCard(p) {
   const cantidad = p.cantidad ?? 0;
   const minimo = p.stockMinimo ?? 0;
-  const agotado = cantidad === 0;
-  const bajo = !agotado && cantidad <= minimo;
+  const agotado = !p.pesable && cantidad === 0;
+  const bajo = !p.pesable && !agotado && cantidad <= minimo;
   const ok = !agotado && !bajo;
 
   const cardClasses = agotado
-    ? "border-red-200 bg-red-50"
+    ? "border-red-600 bg-red-50"
     : bajo
-    ? "border-orange-200 bg-orange-50"
-    : "border-green-200 bg-green-50";
+    ? "border-red-400 bg-red-50/60"
+    : "border-ink/15 bg-white";
 
   const cantColor = agotado
     ? "text-red-600"
     : bajo
-    ? "text-orange-500"
-    : "text-green-600";
+    ? "text-red-500"
+    : "text-ink/80";
 
   const badge = agotado
-    ? `<span class="inline-flex items-center gap-1 rounded-full bg-red-500 px-2 py-0.5 text-xs font-semibold text-white">
+    ? `<span class="inline-flex items-center gap-1 rounded-full bg-red-600 px-2 py-0.5 text-xs font-semibold text-white">
          <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M12 9v4M12 17h.01" stroke-linecap="round"/></svg>
          Sin stock
        </span>`
     : bajo
-    ? `<span class="inline-flex items-center gap-1 rounded-full bg-orange-400 px-2 py-0.5 text-xs font-semibold text-white">
+    ? `<span class="inline-flex items-center gap-1 rounded-full bg-red-500 px-2 py-0.5 text-xs font-semibold text-white">
          <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M12 9v4M12 17h.01" stroke-linecap="round"/></svg>
          Bajo
        </span>`
@@ -1019,11 +1064,14 @@ function renderProductCard(p) {
           ${badge}
         </div>
         <p class="truncate font-mono text-xs text-ink/40">${escapeHtml(p.codigo)}</p>
-        <p class="mt-0.5 text-xs text-ink/50">Mín: ${minimo} · Venta: $${formatPrice(p.precioVenta)}</p>
+        <p class="mt-0.5 text-xs text-ink/50">${p.pesable ? "Pesable · sin control de stock" : `Mín: ${minimo} · Venta: $${formatPrice(p.precioVenta)}`}</p>
       </div>
       <div class="text-right">
-        <p class="text-2xl font-bold leading-none ${cantColor}">${cantidad}</p>
-        <p class="text-[11px] uppercase tracking-wide text-ink/40">unid.</p>
+        ${p.pesable
+          ? `<p class="text-lg font-bold leading-none text-ink">$${formatPrice(p.precioKilo)}</p>
+             <p class="text-[11px] uppercase tracking-wide text-ink/40">por kg</p>`
+          : `<p class="text-2xl font-bold leading-none ${cantColor}">${cantidad}</p>
+             <p class="text-[11px] uppercase tracking-wide text-ink/40">unid.</p>`}
       </div>
       <button data-op="${escapeAttr(p.codigo)}" aria-label="Operación rápida"
         class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand text-white transition active:scale-95 hover:bg-brand-dark">
@@ -1066,6 +1114,36 @@ function renderReports() {
     })
     .join("");
 
+  // --- Vendido por peso (hoy) ---
+  const byWeighed = {};
+  for (const v of todaySales) {
+    for (const it of v.items || []) {
+      if (!it.pesable) continue;
+      const key = it.codigoBase || it.nombre;
+      const nombre = it.nombreBase || (it.nombre || "").replace(/\s*\(\d+(\.\d+)?g\)$/, "");
+      if (!byWeighed[key]) byWeighed[key] = { nombre, gramos: 0, total: 0, ventas: 0 };
+      byWeighed[key].gramos += it.gramos || 0;
+      byWeighed[key].total += (it.precio || 0) * (it.cantidad || 1);
+      byWeighed[key].ventas++;
+    }
+  }
+  const weighedRows = Object.values(byWeighed).sort((a, b) => b.total - a.total);
+  const weighedList = $("#rep-weighed");
+  $("#rep-weighed-empty").classList.toggle("hidden", weighedRows.length > 0);
+  weighedList.innerHTML = weighedRows
+    .map((w) => {
+      const kg = w.gramos >= 1000 ? `${(w.gramos / 1000).toFixed(2)} kg` : `${w.gramos} g`;
+      return `
+      <li class="flex items-center justify-between rounded-2xl bg-white p-3 shadow-sm ring-1 ring-ink/10">
+        <div class="min-w-0">
+          <p class="truncate font-medium text-ink">${escapeHtml(w.nombre)}</p>
+          <p class="text-xs text-ink/40">${kg} · ${w.ventas} ${w.ventas === 1 ? "pesada" : "pesadas"}</p>
+        </div>
+        <span class="text-lg font-bold text-ink">$${formatPrice(w.total)}</span>
+      </li>`;
+    })
+    .join("");
+
   // --- Valor del inventario ---
   let totalUnits = 0, totalCosto = 0, totalVenta = 0;
   for (const p of products) {
@@ -1101,15 +1179,15 @@ function renderLowStockRow(p) {
   const minimo = p.stockMinimo ?? 0;
   const agotado = cantidad === 0;
   return `
-    <li class="flex items-center gap-3 rounded-2xl border ${agotado ? "border-red-300 bg-red-50" : "border-orange-200 bg-orange-50"} p-3 shadow-sm">
-      <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${agotado ? "bg-red-500" : "bg-orange-400"} text-white">
+    <li class="flex items-center gap-3 rounded-2xl border ${agotado ? "border-red-600 bg-red-50" : "border-red-400 bg-red-50/60"} p-3 shadow-sm">
+      <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${agotado ? "bg-red-600" : "bg-red-500"} text-white">
         <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M12 9v4M12 17h.01" stroke-linecap="round"/><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
       </span>
       <div class="min-w-0 flex-1">
-        <p class="truncate font-semibold ${agotado ? "text-red-700" : "text-orange-700"}">${escapeHtml(p.nombre || p.codigo)}</p>
-        <p class="text-xs ${agotado ? "text-red-400" : "text-orange-400"}">Mínimo: ${minimo} · ${agotado ? "¡Sin stock!" : "Quedan pocos"}</p>
+        <p class="truncate font-semibold text-red-700">${escapeHtml(p.nombre || p.codigo)}</p>
+        <p class="text-xs text-red-400">Mínimo: ${minimo} · ${agotado ? "¡Sin stock!" : "Quedan pocos"}</p>
       </div>
-      <span class="text-lg font-bold ${agotado ? "text-red-600" : "text-orange-500"}">${cantidad}</span>
+      <span class="text-lg font-bold ${agotado ? "text-red-600" : "text-red-500"}">${cantidad}</span>
     </li>`;
 }
 
@@ -1188,6 +1266,18 @@ function exportInventoryXlsx() {
     const cant = p.cantidad ?? 0;
     const costo = Number(p.precioCosto) || 0;
     const venta = Number(p.precioVenta) || 0;
+    if (p.pesable) {
+      return {
+        "Código": p.codigo,
+        "Nombre": p.nombre || "",
+        "Cantidad": "Pesable (sin control de stock)",
+        "Stock mínimo": "",
+        "Precio costo": costo ? `${costo} /kg` : "",
+        "Precio venta": `${Number(p.precioKilo) || 0} /kg`,
+        "Valor costo": "",
+        "Valor venta": "",
+      };
+    }
     return {
       "Código": p.codigo,
       "Nombre": p.nombre || "",
@@ -1455,12 +1545,12 @@ async function renderStats() {
       const x  = i * (barW + gap);
       const y  = chartH - bh;
       const isToday = date === new Date().toISOString().slice(0,10);
-      const color = isToday ? "#576179" : "#979fc5";
+      const color = isToday ? "#1a1a1a" : "#8a8a8a";
       const label = statsperiodDays <= 30
         ? new Date(date + "T12:00:00").toLocaleDateString("es", { day: "numeric" })
         : "";
       return `<rect x="${x}" y="${y}" width="${barW}" height="${bh}" rx="4" fill="${color}" opacity="${val > 0 ? 1 : 0.2}"/>
-              ${label ? `<text x="${x + barW/2}" y="${chartH + 14}" text-anchor="middle" font-size="9" fill="#979fc5">${label}</text>` : ""}`;
+              ${label ? `<text x="${x + barW/2}" y="${chartH + 14}" text-anchor="middle" font-size="9" fill="#8a8a8a">${label}</text>` : ""}`;
     }).join("")}
   </svg>`;
   $("#chart-daily").innerHTML = dailySvg;
@@ -1476,10 +1566,10 @@ async function renderStats() {
       const bw = val > 0 ? Math.max(4, Math.round((val / maxHour) * hChartW)) : 2;
       const y  = h * (hBarH + hGap);
       const label = `${String(h).padStart(2,"0")}:00`;
-      const color = val === Math.max(...byHour) ? "#576179" : "#979fc5";
-      return `<text x="32" y="${y + hBarH - 3}" text-anchor="end" font-size="10" fill="#979fc5">${label}</text>
+      const color = val === Math.max(...byHour) ? "#1a1a1a" : "#8a8a8a";
+      return `<text x="32" y="${y + hBarH - 3}" text-anchor="end" font-size="10" fill="#8a8a8a">${label}</text>
               <rect x="36" y="${y}" width="${bw}" height="${hBarH}" rx="3" fill="${color}" opacity="${val > 0 ? 0.85 : 0.15}"/>
-              ${val > 0 ? `<text x="${36 + bw + 4}" y="${y + hBarH - 3}" font-size="10" fill="#576179">$${formatPrice(val)}</text>` : ""}`;
+              ${val > 0 ? `<text x="${36 + bw + 4}" y="${y + hBarH - 3}" font-size="10" fill="#1a1a1a">$${formatPrice(val)}</text>` : ""}`;
     }).join("")}
   </svg>`;
   $("#chart-hourly").innerHTML = hourlySvg;
@@ -1510,7 +1600,7 @@ async function renderStats() {
             <span class="text-ink/50">$${formatPrice(total)}</span>
           </div>
           <div class="h-2 w-full rounded-full bg-ink/5">
-            <div class="h-2 rounded-full bg-[#979fc5]" style="width:${pct}%"></div>
+            <div class="h-2 rounded-full bg-[#8a8a8a]" style="width:${pct}%"></div>
           </div>
         </div>`;
       }).join("")}
@@ -1527,7 +1617,7 @@ async function renderStats() {
   }
   const methodEntries = Object.entries(byMethod).sort((a,b) => b[1]-a[1]);
   const totalMethods  = methodEntries.reduce((s,[,v]) => s+v, 0);
-  const COLORS = ["#576179","#979fc5","#d5deea","#252531","#8a92b8","#b8c4d6"];
+  const COLORS = ["#1a1a1a","#8a8a8a","#d4d4d4","#000000","#6b6b6b","#c4c4c4"];
   if (methodEntries.length) {
     $("#chart-methods").innerHTML = `<div class="space-y-2">
       ${methodEntries.map(([key, val], i) => {
@@ -1615,7 +1705,7 @@ function bindEvents() {
     const prod = pendingWeighProduct;
     if (!prod) return;
     const g = parseFloat($("#weigh-grams").value) || 0;
-    const precio = Math.round((prod.precioKilo * g) / 1000);
+    const precio = roundToTen((prod.precioKilo * g) / 1000);
     const preview = $("#weigh-preview");
     if (g > 0) {
       $("#weigh-preview-price").textContent = "$" + formatPrice(precio);
@@ -1633,11 +1723,14 @@ function bindEvents() {
   $("#pf-pesable").addEventListener("change", () => {
     const isPesable = $("#pf-pesable").checked;
     $("#pf-precio-kilo-wrap").classList.toggle("hidden", !isPesable);
+    $("#pf-cantidad-wrap").classList.toggle("hidden", isPesable);
     $("#pf-minimo-wrap").classList.toggle("hidden", isPesable);
     $("#pf-venta-wrap").classList.toggle("hidden", isPesable);
-    $("#pf-cantidad-label").textContent = isPesable ? "Kilos disponibles" : "Cantidad actual";
+    $("#pf-costo-label").textContent = isPesable ? "Costo por kilo" : "Precio costo";
+    $("#pf-cantidad").required = !isPesable;
     $("#pf-minimo").required = !isPesable;
     if (isPesable) {
+      $("#pf-cantidad").value = 0;
       $("#pf-minimo").value = 0;
       $("#pf-venta").value = 0;
       setTimeout(() => $("#pf-precio-kilo").focus(), 50);
@@ -1651,6 +1744,12 @@ function bindEvents() {
 
   $("#add-product-btn").addEventListener("click", () => openProductForm());
   $("#inventory-search").addEventListener("input", renderInventory);
+  document.querySelectorAll(".inv-filter-btn").forEach((b) => {
+    b.addEventListener("click", () => {
+      inventoryFilter = b.dataset.filter;
+      renderInventory();
+    });
+  });
 
   $("#export-csv-btn").addEventListener("click", exportHistoryCsv);
 
