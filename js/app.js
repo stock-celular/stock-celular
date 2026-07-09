@@ -246,6 +246,10 @@ async function flushOutbox() {
           await productsApi.delete(op.uid, op.payload.codigo);
         } else if (op.type === "sale") {
           await salesApi.commit(op.uid, op.payload.sale);
+        } else if (op.type === "revertSale") {
+          await salesApi.revert(op.uid, op.payload.sale);
+        } else if (op.type === "updateSale") {
+          await salesApi.update(op.uid, op.payload.sale, op.payload.deltas || []);
         }
         await localDB.deleteFromOutbox(op.id);
       } catch (e) {
@@ -332,6 +336,7 @@ function switchTab(tabId) {
   $("#header-title").textContent = TAB_TITLES[tabId] || "Inventario";
 
   if (tabId === "tab-reports") renderReports();
+  if (tabId === "tab-sales") renderSales();
   if (tabId === "tab-scan") focusScanInput();
   if (tabId === "tab-pos") focusPosInput();
   if (tabId === "tab-stats") renderStats();
@@ -506,6 +511,33 @@ function roundToTen(n) {
   return Math.round(n / 10) * 10;
 }
 
+// ── Modal de confirmación propio (reemplaza a confirm() nativo) ──
+let confirmResolver = null;
+
+function showConfirm({ title = "¿Estás seguro?", message = "", confirmLabel = "Confirmar", danger = false } = {}) {
+  return new Promise((resolve) => {
+    confirmResolver = resolve;
+    $("#confirm-title").textContent = title;
+    $("#confirm-message").textContent = message;
+    const btn = $("#confirm-accept-btn");
+    btn.textContent = confirmLabel;
+    btn.classList.toggle("bg-red-600", danger);
+    btn.classList.toggle("hover:bg-red-700", danger);
+    btn.classList.toggle("bg-brand", !danger);
+    btn.classList.toggle("hover:bg-brand-dark", !danger);
+    openModal("confirm-modal");
+  });
+}
+
+function resolveConfirm(value) {
+  closeModal("confirm-modal");
+  if (confirmResolver) {
+    confirmResolver(value);
+    confirmResolver = null;
+  }
+}
+
+
 function confirmWeigh() {
   const prod = pendingWeighProduct;
   if (!prod) return;
@@ -574,12 +606,12 @@ function renderCart() {
 }
 
 function renderCartRow(c) {
-  if (c.pesable) {
+  if (c.pesable || c.manual) {
     return `
       <li class="flex items-center gap-2 rounded-xl border border-brand/20 bg-brand/5 p-2.5">
         <div class="min-w-0 flex-1">
           <p class="truncate text-sm font-semibold text-ink">${escapeHtml(c.nombre)}</p>
-          <p class="text-xs text-ink/40">Precio calculado por peso</p>
+          <p class="text-xs text-ink/40">${c.manual ? "Ítem manual" : "Precio calculado por peso"}</p>
         </div>
         <span class="w-20 text-right text-sm font-bold text-brand">$${formatPrice(c.precio)}</span>
         <button data-del="${escapeAttr(c.codigo)}" aria-label="Quitar" class="flex h-8 w-8 items-center justify-center rounded-lg text-ink/40 transition hover:bg-ink/5 hover:text-ink">
@@ -665,6 +697,351 @@ function posClear() {
   renderCart();
 }
 
+// ── Ítem manual (sin código de barras): solo nombre y precio ──
+function openManualItem() {
+  $("#mi-nombre").value = "";
+  $("#mi-precio").value = "";
+  openModal("manual-item-modal");
+  setTimeout(() => $("#mi-nombre").focus(), 50);
+}
+
+function confirmManualItem() {
+  const nombre = $("#mi-nombre").value.trim();
+  const precio = parseFloat($("#mi-precio").value) || 0;
+  if (!nombre) { showToast("Ingresá un nombre", "error"); return; }
+  if (precio <= 0) { showToast("Ingresá un precio válido", "error"); return; }
+  cart.push({
+    codigo: `manual-${Date.now()}`,
+    nombre,
+    precio,
+    cantidad: 1,
+    manual: true,
+  });
+  closeModal("manual-item-modal");
+  renderCart();
+  showToast(`${nombre} agregado`, "success");
+}
+
+function updateUndoButton() {
+  const btn = $("#pos-undo-btn");
+  if (!btn) return;
+  const last = todaySales[0];
+  btn.disabled = !last;
+  btn.title = last ? `Última: $${formatPrice(last.total || 0)}` : "";
+}
+
+function saleTracksStock(it) {
+  return !it.pesable && !it.manual;
+}
+
+// Anula una venta: repone stock, registra movimientos y la quita del día.
+// La usan "Deshacer última venta" y el módulo de Ventas.
+async function annulSale(sale) {
+  // 1) Repone stock local (pesables y manuales no llevan stock)
+  for (const it of sale.items || []) {
+    if (!saleTracksStock(it)) continue;
+    const idx = products.findIndex((p) => p.codigo === it.codigo);
+    if (idx >= 0) {
+      products[idx] = {
+        ...products[idx],
+        cantidad: (products[idx].cantidad ?? 0) + (it.cantidad || 0),
+      };
+      await localDB.putProduct(products[idx]);
+    }
+  }
+
+  // 2) Registra movimientos de entrada por la anulación
+  const now = Date.now();
+  for (const it of sale.items || []) {
+    const mov = {
+      codigo: it.pesable ? (it.codigoBase || it.codigo) : it.codigo,
+      nombre: `Anulación: ${it.nombre}`,
+      accion: "entrada",
+      cantidad: it.cantidad || 0,
+      ts: now,
+    };
+    todayMovements.unshift(mov);
+    await localDB.addMovement(mov);
+  }
+
+  // 3) Quita la venta del día (caché + IndexedDB)
+  todaySales = todaySales.filter((v) => v.ts !== sale.ts);
+  await localDB.replaceSales(todaySales);
+
+  // 4) Nube: si la venta aún no se subió, basta con sacarla de la cola;
+  //    si ya se subió, se encola la reversión.
+  const pending = await localDB.getOutbox();
+  const queued = pending.find(
+    (op) => op.type === "sale" && op.payload?.sale?.ts === sale.ts
+  );
+  if (queued) {
+    await localDB.deleteFromOutbox(queued.id);
+  } else {
+    await localDB.addToOutbox({ uid: currentUser.uid, type: "revertSale", payload: { sale } });
+    scheduleFlush();
+  }
+
+  renderInventory();
+  renderReports();
+  renderSales();
+  renderHistory(todayMovements);
+}
+
+async function undoLastSale() {
+  const sale = todaySales[0];
+  if (!sale) {
+    showToast("No hay ventas hoy para deshacer", "error");
+    return;
+  }
+  const metodoLabel = PAYMENT_METHODS.find((m) => m.id === sale.metodoPago)?.label || sale.metodoPago;
+  const ok = await showConfirm({
+    title: "Deshacer última venta",
+    message: `Se anulará la venta de $${formatPrice(sale.total || 0)} (${metodoLabel}) y se repondrá el stock.`,
+    confirmLabel: "Deshacer",
+    danger: true,
+  });
+  if (!ok) return;
+  await annulSale(sale);
+  showToast(`Venta de $${formatPrice(sale.total || 0)} anulada`, "success");
+}
+
+// ════════════════ MÓDULO: VENTAS DEL DÍA (editar / anular) ════════════════
+let editingSale = null; // { ts, metodoPago, items: [copias editables] }
+
+function renderSales() {
+  const list = $("#sales-list");
+  if (!list) return;
+  $("#sales-empty").classList.toggle("hidden", todaySales.length > 0);
+  list.innerHTML = todaySales
+    .map((v, i) => {
+      const hora = new Date(v.ts || Date.now()).toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" });
+      const metodo = PAYMENT_METHODS.find((m) => m.id === v.metodoPago)?.label || v.metodoPago || "—";
+      const nItems = (v.items || []).reduce((s, it) => s + (it.cantidad || 1), 0);
+      const detalle = (v.items || []).map((it) => it.nombre).join(", ");
+      return `
+      <li>
+        <button data-sale-idx="${i}" class="flex w-full items-center gap-3 rounded-2xl border border-ink/10 bg-paper p-3 text-left transition active:scale-[0.99] hover:border-ink/30">
+          <div class="min-w-0 flex-1">
+            <p class="text-sm font-semibold text-ink">${hora} · ${metodo}</p>
+            <p class="mt-0.5 truncate text-xs text-ink/50">${nItems} art. — ${escapeHtml(detalle)}</p>
+          </div>
+          <span class="text-lg font-bold text-ink">$${formatPrice(v.total || 0)}</span>
+          <svg class="h-4 w-4 shrink-0 text-ink/40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+        </button>
+      </li>`;
+    })
+    .join("");
+  list.querySelectorAll("[data-sale-idx]").forEach((el) =>
+    el.addEventListener("click", () => openSaleEdit(todaySales[parseInt(el.dataset.saleIdx, 10)]))
+  );
+}
+
+function openSaleEdit(sale) {
+  if (!sale) return;
+  editingSale = {
+    ts: sale.ts,
+    metodoPago: sale.metodoPago,
+    items: (sale.items || []).map((it) => ({ ...it })),
+  };
+  const hora = new Date(sale.ts || Date.now()).toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" });
+  $("#se-subtitle").textContent = `Venta de las ${hora}`;
+  renderSaleEdit();
+  openModal("sale-edit-modal");
+}
+
+function saleEditTotal() {
+  return editingSale.items.reduce((s, it) => s + (it.precio || 0) * (it.cantidad || 0), 0);
+}
+
+function renderSaleEdit() {
+  const list = $("#se-items");
+  $("#se-total").textContent = "$" + formatPrice(saleEditTotal());
+
+  list.innerHTML = editingSale.items
+    .map((it, i) => {
+      const fijo = it.pesable || it.manual; // línea de precio fijo: se edita el precio
+      const left = `
+        <div class="min-w-0 flex-1">
+          <p class="truncate text-sm font-semibold text-ink">${escapeHtml(it.nombre)}</p>
+          <p class="text-xs text-ink/40">${it.pesable ? "Pesable" : it.manual ? "Ítem manual" : `$${formatPrice(it.precio)} c/u`}</p>
+        </div>`;
+      const middle = fijo
+        ? `<input data-se-price="${i}" type="number" inputmode="numeric" min="0" step="1" value="${it.precio || 0}"
+             class="w-24 rounded-lg border-ink/15 py-1.5 text-right text-sm font-bold focus:border-brand focus:ring-brand" />`
+        : `<div class="flex items-center gap-1.5">
+             <button data-se-dec="${i}" class="flex h-8 w-8 items-center justify-center rounded-lg bg-ink/10 text-lg font-bold text-ink active:scale-95">−</button>
+             <span class="w-6 text-center text-sm font-bold text-ink">${it.cantidad}</span>
+             <button data-se-inc="${i}" class="flex h-8 w-8 items-center justify-center rounded-lg bg-ink/10 text-lg font-bold text-ink active:scale-95">+</button>
+           </div>
+           <span class="w-20 text-right text-sm font-bold text-ink">$${formatPrice((it.precio || 0) * (it.cantidad || 0))}</span>`;
+      return `
+      <li class="flex items-center gap-2 rounded-xl border border-ink/10 bg-paper p-2.5">
+        ${left}
+        ${middle}
+        <button data-se-del="${i}" aria-label="Quitar" class="flex h-8 w-8 items-center justify-center rounded-lg text-ink/40 transition hover:bg-ink/5 hover:text-ink">
+          <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </li>`;
+    })
+    .join("");
+
+  list.querySelectorAll("[data-se-inc]").forEach((el) =>
+    el.addEventListener("click", () => {
+      const it = editingSale.items[parseInt(el.dataset.seInc, 10)];
+      // No permite superar el stock disponible actual + lo ya vendido en esta venta
+      const orig = (todaySales.find((v) => v.ts === editingSale.ts)?.items || [])
+        .find((o) => o.codigo === it.codigo);
+      const disponible = stockOf(it.codigo) + (orig?.cantidad || 0);
+      if (it.cantidad + 1 > disponible) {
+        showToast("Sin stock suficiente", "error");
+        return;
+      }
+      it.cantidad++;
+      renderSaleEdit();
+    })
+  );
+  list.querySelectorAll("[data-se-dec]").forEach((el) =>
+    el.addEventListener("click", () => {
+      const it = editingSale.items[parseInt(el.dataset.seDec, 10)];
+      if (it.cantidad > 1) { it.cantidad--; renderSaleEdit(); }
+    })
+  );
+  list.querySelectorAll("[data-se-del]").forEach((el) =>
+    el.addEventListener("click", () => {
+      editingSale.items.splice(parseInt(el.dataset.seDel, 10), 1);
+      renderSaleEdit();
+    })
+  );
+  list.querySelectorAll("[data-se-price]").forEach((el) =>
+    el.addEventListener("input", () => {
+      const it = editingSale.items[parseInt(el.dataset.sePrice, 10)];
+      it.precio = parseFloat(el.value) || 0;
+      $("#se-total").textContent = "$" + formatPrice(saleEditTotal());
+    })
+  );
+
+  // Métodos de pago
+  const wrap = $("#se-methods");
+  wrap.innerHTML = PAYMENT_METHODS.map((m) => {
+    const active = editingSale.metodoPago === m.id;
+    const cls = active
+      ? "border-brand bg-brand text-white"
+      : "border-ink/15 bg-white text-ink/80 hover:bg-paper";
+    return `<button data-se-method="${m.id}" class="rounded-xl border px-3 py-2.5 text-sm font-semibold transition active:scale-[0.98] ${cls}">${m.label}</button>`;
+  }).join("");
+  wrap.querySelectorAll("[data-se-method]").forEach((el) =>
+    el.addEventListener("click", () => {
+      editingSale.metodoPago = el.dataset.seMethod;
+      renderSaleEdit();
+    })
+  );
+}
+
+async function saveSaleEdit() {
+  if (!editingSale) return;
+  const orig = todaySales.find((v) => v.ts === editingSale.ts);
+  if (!orig) { closeModal("sale-edit-modal"); return; }
+
+  // Sin artículos = anular la venta completa
+  if (editingSale.items.length === 0) {
+    const ok = await showConfirm({
+      title: "Anular venta",
+      message: "Quitaste todos los artículos. Se anulará la venta completa y se repondrá el stock.",
+      confirmLabel: "Anular",
+      danger: true,
+    });
+    if (!ok) return;
+    closeModal("sale-edit-modal");
+    await annulSale(orig);
+    showToast("Venta anulada", "success");
+    return;
+  }
+
+  const newItems = editingSale.items.map((it) => ({ ...it }));
+  const newTotal = newItems.reduce((s, it) => s + (it.precio || 0) * (it.cantidad || 0), 0);
+
+  // Deltas de stock solo para productos con control de stock:
+  // positivo = devolver al stock, negativo = descontar más.
+  const deltas = [];
+  for (const o of orig.items || []) {
+    if (!saleTracksStock(o)) continue;
+    const n = newItems.find((it) => it.codigo === o.codigo);
+    const delta = (o.cantidad || 0) - (n?.cantidad || 0);
+    if (delta !== 0) deltas.push({ codigo: o.codigo, nombre: o.nombre, delta });
+  }
+
+  // 1) Aplica deltas al stock local + movimientos de ajuste
+  const now = Date.now();
+  for (const d of deltas) {
+    const idx = products.findIndex((p) => p.codigo === d.codigo);
+    if (idx >= 0) {
+      products[idx] = {
+        ...products[idx],
+        cantidad: (products[idx].cantidad ?? 0) + d.delta,
+      };
+      await localDB.putProduct(products[idx]);
+    }
+    const mov = {
+      codigo: d.codigo,
+      nombre: `Ajuste venta: ${d.nombre}`,
+      accion: d.delta > 0 ? "entrada" : "salida",
+      cantidad: Math.abs(d.delta),
+      ts: now,
+    };
+    todayMovements.unshift(mov);
+    await localDB.addMovement(mov);
+  }
+
+  // 2) Actualiza la venta (caché + IndexedDB)
+  orig.items = newItems;
+  orig.total = newTotal;
+  orig.metodoPago = editingSale.metodoPago;
+  await localDB.replaceSales(todaySales);
+
+  // 3) Nube: si sigue en la cola, se reemplaza el commit pendiente por el
+  //    corregido; si ya se subió, se encola la actualización con los deltas.
+  const pending = await localDB.getOutbox();
+  const queued = pending.find(
+    (op) => op.type === "sale" && op.payload?.sale?.ts === orig.ts
+  );
+  if (queued) {
+    await localDB.deleteFromOutbox(queued.id);
+    await localDB.addToOutbox({ uid: currentUser.uid, type: "sale", payload: { sale: { ...orig } } });
+  } else {
+    await localDB.addToOutbox({
+      uid: currentUser.uid,
+      type: "updateSale",
+      payload: { sale: { ...orig }, deltas },
+    });
+  }
+  scheduleFlush();
+
+  closeModal("sale-edit-modal");
+  editingSale = null;
+  renderInventory();
+  renderReports();
+  renderSales();
+  renderHistory(todayMovements);
+  showToast("Venta actualizada", "success");
+}
+
+async function deleteSaleFromEdit() {
+  if (!editingSale) return;
+  const orig = todaySales.find((v) => v.ts === editingSale.ts);
+  if (!orig) { closeModal("sale-edit-modal"); return; }
+  const ok = await showConfirm({
+    title: "Anular venta",
+    message: `Se anulará la venta de $${formatPrice(orig.total || 0)} y se repondrá el stock.`,
+    confirmLabel: "Anular",
+    danger: true,
+  });
+  if (!ok) return;
+  closeModal("sale-edit-modal");
+  editingSale = null;
+  await annulSale(orig);
+  showToast("Venta anulada", "success");
+}
+
 async function posCharge() {
   if (cart.length === 0) {
     showToast("El ticket está vacío", "error");
@@ -675,8 +1052,8 @@ async function posCharge() {
     return;
   }
   for (const c of cart) {
-    // Pesables: sin control de stock, no se valida cantidad
-    if (!c.pesable && c.cantidad > stockOf(c.codigo)) {
+    // Pesables y manuales: sin control de stock, no se valida cantidad
+    if (!c.pesable && !c.manual && c.cantidad > stockOf(c.codigo)) {
       showToast(`Sin stock suficiente de ${c.nombre}`, "error");
       return;
     }
@@ -688,6 +1065,7 @@ async function posCharge() {
     precio: c.precio,
     cantidad: c.cantidad,
     pesable: !!c.pesable,
+    manual: !!c.manual,
     gramos: c.gramos || 0,
     codigoBase: c.codigoBase || null,
     nombreBase: c.nombreBase || null,
@@ -698,7 +1076,7 @@ async function posCharge() {
 
   // 1) Actualiza el dispositivo al instante: stock, movimientos y venta.
   for (const it of items) {
-    if (!it.pesable) {
+    if (!it.pesable && !it.manual) {
       const idx = products.findIndex((p) => p.codigo === it.codigo);
       if (idx >= 0) {
         products[idx] = {
@@ -724,6 +1102,7 @@ async function posCharge() {
   posClear();
   renderInventory();
   renderReports();
+  renderSales();
   renderHistory(todayMovements);
   focusPosInput();
 
@@ -919,7 +1298,13 @@ async function saveProduct(e) {
 
 async function deleteProduct() {
   if (!editingCode) return;
-  if (!confirm("¿Eliminar este producto del inventario?")) return;
+  const ok = await showConfirm({
+    title: "Eliminar producto",
+    message: "Se borrará del inventario en este dispositivo y en la nube. Esta acción no se puede deshacer.",
+    confirmLabel: "Eliminar",
+    danger: true,
+  });
+  if (!ok) return;
 
   const codigo = editingCode;
   products = products.filter((p) => p.codigo !== codigo);
@@ -1084,6 +1469,7 @@ function renderProductCard(p) {
 //  Render: Reportes
 // ============================================================
 function renderReports() {
+  updateUndoButton();
   // --- Ventas de hoy (caja) ---
   const salesTotal = todaySales.reduce((s, v) => s + (v.total || 0), 0);
   const salesCount = todaySales.length;
@@ -1699,6 +2085,18 @@ function bindEvents() {
   });
   $("#pos-charge-btn").addEventListener("click", posCharge);
   $("#pos-clear-btn").addEventListener("click", posClear);
+  $("#pos-undo-btn").addEventListener("click", undoLastSale);
+  $("#pos-manual-btn").addEventListener("click", openManualItem);
+  $("#mi-add-btn").addEventListener("click", confirmManualItem);
+  $("#mi-precio").addEventListener("keydown", (e) => { if (e.key === "Enter") confirmManualItem(); });
+  $("#se-save-btn").addEventListener("click", saveSaleEdit);
+  $("#se-delete-btn").addEventListener("click", deleteSaleFromEdit);
+
+  // Modal de confirmación genérico
+  $("#confirm-accept-btn").addEventListener("click", () => resolveConfirm(true));
+  document.querySelectorAll("[data-confirm-cancel]").forEach((el) =>
+    el.addEventListener("click", () => resolveConfirm(false))
+  );
 
   // Modal de pesable: confirmar gramos
   $("#weigh-grams").addEventListener("input", () => {

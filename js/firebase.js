@@ -164,9 +164,9 @@ export const movementsApi = {
 export const salesApi = {
   async commit(uid, sale) {
     for (const it of sale.items) {
-      // Pesables: no llevan control de stock (su "código" de línea es
-      // un identificador de pesada, no un documento de producto).
-      if (!it.pesable) {
+      // Pesables y manuales: no llevan control de stock (su "código" de
+      // línea no corresponde a un documento de producto).
+      if (!it.pesable && !it.manual) {
         await updateDoc(productDoc(uid, it.codigo), {
           cantidad: increment(-it.cantidad),
           actualizado: serverTimestamp(),
@@ -184,8 +184,66 @@ export const salesApi = {
       total: sale.total,
       metodoPago: sale.metodoPago,
       items: sale.items,
+      ts: sale.ts || Date.now(), // marca local: permite ubicar la venta al anularla
       fecha: serverTimestamp(),
     });
+  },
+
+  // Anula una venta ya subida: repone stock, registra movimientos de
+  // entrada y elimina el documento de la venta (ubicado por su ts local).
+  async revert(uid, sale) {
+    for (const it of sale.items || []) {
+      if (!it.pesable && !it.manual) {
+        await updateDoc(productDoc(uid, it.codigo), {
+          cantidad: increment(it.cantidad || 0),
+          actualizado: serverTimestamp(),
+        });
+      }
+      await addDoc(movementsCol(uid), {
+        codigo: it.pesable ? (it.codigoBase || it.codigo) : it.codigo,
+        nombre: `Anulación: ${it.nombre}`,
+        accion: "entrada",
+        cantidad: it.cantidad || 0,
+        fecha: serverTimestamp(),
+      });
+    }
+    if (sale.ts) {
+      const q = query(salesCol(uid), where("ts", "==", sale.ts));
+      const snap = await getDocs(q);
+      for (const d of snap.docs) {
+        await deleteDoc(doc(db, "usuarios", uid, "ventas", d.id));
+      }
+    }
+  },
+
+  // Corrige una venta ya subida: aplica los deltas de stock, registra
+  // movimientos de ajuste y actualiza el documento (ubicado por su ts local).
+  // delta > 0 devuelve stock; delta < 0 descuenta más.
+  async update(uid, sale, deltas) {
+    for (const d of deltas || []) {
+      await updateDoc(productDoc(uid, d.codigo), {
+        cantidad: increment(d.delta),
+        actualizado: serverTimestamp(),
+      });
+      await addDoc(movementsCol(uid), {
+        codigo: d.codigo,
+        nombre: `Ajuste venta: ${d.nombre}`,
+        accion: d.delta > 0 ? "entrada" : "salida",
+        cantidad: Math.abs(d.delta),
+        fecha: serverTimestamp(),
+      });
+    }
+    if (sale.ts) {
+      const q = query(salesCol(uid), where("ts", "==", sale.ts));
+      const snap = await getDocs(q);
+      for (const d of snap.docs) {
+        await updateDoc(doc(db, "usuarios", uid, "ventas", d.id), {
+          total: sale.total,
+          metodoPago: sale.metodoPago,
+          items: sale.items,
+        });
+      }
+    }
   },
 
   async fetchToday(uid) {
@@ -204,7 +262,7 @@ export const salesApi = {
         total: data.total || 0,
         metodoPago: data.metodoPago || "otro",
         items: data.items || [],
-        ts: fecha.getTime(),
+        ts: data.ts || fecha.getTime(),
       };
     });
   },
@@ -224,7 +282,7 @@ export const salesApi = {
         total: data.total || 0,
         metodoPago: data.metodoPago || "otro",
         items: data.items || [],
-        ts: fecha.getTime(),
+        ts: data.ts || fecha.getTime(),
       };
     });
   },
