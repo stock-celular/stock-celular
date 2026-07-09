@@ -158,6 +158,28 @@ export const movementsApi = {
       };
     });
   },
+
+  // Movimientos de un rango de fechas (para el selector de día del historial).
+  async fetchRange(uid, start, end) {
+    const q = query(
+      movementsCol(uid),
+      where("fecha", ">=", Timestamp.fromDate(start)),
+      where("fecha", "<", Timestamp.fromDate(end)),
+      orderBy("fecha", "desc")
+    );
+    const snap = await getDocs(q);
+    return snap.docs.map((d) => {
+      const data = d.data();
+      const fecha = data.fecha?.toDate ? data.fecha.toDate() : new Date();
+      return {
+        codigo: data.codigo,
+        nombre: data.nombre,
+        accion: data.accion,
+        cantidad: data.cantidad,
+        ts: fecha.getTime(),
+      };
+    });
+  },
 };
 
 // ---------- Ventas (caja) ----------

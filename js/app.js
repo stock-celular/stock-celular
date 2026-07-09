@@ -805,35 +805,97 @@ async function undoLastSale() {
   showToast(`Venta de $${formatPrice(sale.total || 0)} anulada`, "success");
 }
 
-// ════════════════ MÓDULO: VENTAS DEL DÍA (editar / anular) ════════════════
-let editingSale = null; // { ts, metodoPago, items: [copias editables] }
+// ════════════════ MÓDULO: VENTAS (editar / anular / consultar por día) ════════════════
+let editingSale = null;       // { ts, metodoPago, items: [copias editables] }
+let salesDate = null;         // día que se está viendo (yyyy-mm-dd); null = hoy (se fija en init)
+let displayedSales = [];      // lo que se muestra en pantalla
 
+// La llaman caja/anulaciones: refresca la pantalla solo si se está viendo hoy.
 function renderSales() {
+  if (!salesDate || salesDate === todayISO()) displaySales(todaySales, true);
+}
+
+function displaySales(sales, editable) {
+  displayedSales = sales;
   const list = $("#sales-list");
   if (!list) return;
-  $("#sales-empty").classList.toggle("hidden", todaySales.length > 0);
-  list.innerHTML = todaySales
+
+  $("#sales-subtitle").textContent = editable
+    ? "Toca una venta para corregirla o anularla. El stock se ajusta automáticamente."
+    : "Días anteriores: solo consulta. Para corregir una venta, hazlo el mismo día.";
+
+  const total = sales.reduce((s, v) => s + (v.total || 0), 0);
+  const summary = $("#sales-summary");
+  summary.classList.toggle("hidden", sales.length === 0);
+  summary.textContent = `${sales.length} ${sales.length === 1 ? "venta" : "ventas"} · Total $${formatPrice(total)}`;
+
+  $("#sales-empty").textContent = editable
+    ? "Todavía no hay ventas hoy."
+    : "No hay ventas registradas este día.";
+  $("#sales-empty").classList.toggle("hidden", sales.length > 0);
+
+  list.innerHTML = sales
     .map((v, i) => {
       const hora = new Date(v.ts || Date.now()).toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" });
       const metodo = PAYMENT_METHODS.find((m) => m.id === v.metodoPago)?.label || v.metodoPago || "—";
       const nItems = (v.items || []).reduce((s, it) => s + (it.cantidad || 1), 0);
       const detalle = (v.items || []).map((it) => it.nombre).join(", ");
-      return `
-      <li>
-        <button data-sale-idx="${i}" class="flex w-full items-center gap-3 rounded-2xl border border-ink/10 bg-paper p-3 text-left transition active:scale-[0.99] hover:border-ink/30">
+      const inner = `
           <div class="min-w-0 flex-1">
             <p class="text-sm font-semibold text-ink">${hora} · ${metodo}</p>
             <p class="mt-0.5 truncate text-xs text-ink/50">${nItems} art. — ${escapeHtml(detalle)}</p>
           </div>
-          <span class="text-lg font-bold text-ink">$${formatPrice(v.total || 0)}</span>
+          <span class="text-lg font-bold text-ink">$${formatPrice(v.total || 0)}</span>`;
+      if (!editable) {
+        return `
+      <li class="flex w-full items-center gap-3 rounded-2xl border border-ink/10 bg-paper p-3">
+        ${inner}
+      </li>`;
+      }
+      return `
+      <li>
+        <button data-sale-idx="${i}" class="flex w-full items-center gap-3 rounded-2xl border border-ink/10 bg-paper p-3 text-left transition active:scale-[0.99] hover:border-ink/30">
+          ${inner}
           <svg class="h-4 w-4 shrink-0 text-ink/40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
         </button>
       </li>`;
     })
     .join("");
-  list.querySelectorAll("[data-sale-idx]").forEach((el) =>
-    el.addEventListener("click", () => openSaleEdit(todaySales[parseInt(el.dataset.saleIdx, 10)]))
-  );
+  if (editable) {
+    list.querySelectorAll("[data-sale-idx]").forEach((el) =>
+      el.addEventListener("click", () => openSaleEdit(todaySales[parseInt(el.dataset.saleIdx, 10)]))
+    );
+  }
+}
+
+async function onSalesDayChange() {
+  const value = $("#sales-day").value || todayISO();
+  salesDate = value;
+
+  if (value === todayISO()) {
+    displaySales(todaySales, true);
+    return;
+  }
+
+  // Día pasado: se consulta la nube (solo lectura)
+  $("#sales-list").innerHTML = "";
+  $("#sales-summary").classList.add("hidden");
+  $("#sales-empty").textContent = "Cargando ventas…";
+  $("#sales-empty").classList.remove("hidden");
+  try {
+    const [y, m, d] = value.split("-").map(Number);
+    const start = new Date(y, m - 1, d, 0, 0, 0, 0);
+    const end = new Date(y, m - 1, d + 1, 0, 0, 0, 0);
+    const sales = await salesApi.fetchRange(currentUser.uid, start, end);
+    // Más recientes primero, como en la vista de hoy
+    sales.sort((a, b) => (b.ts || 0) - (a.ts || 0));
+    displaySales(sales, false);
+  } catch (e) {
+    if (isQuotaError && isQuotaError(e)) showQuotaBanner();
+    $("#sales-empty").textContent =
+      "No se pudieron cargar las ventas de ese día. Revisá tu conexión e intentá de nuevo.";
+    $("#sales-empty").classList.remove("hidden");
+  }
 }
 
 function openSaleEdit(sale) {
@@ -1580,23 +1642,75 @@ function renderLowStockRow(p) {
 // ============================================================
 //  Render: Historial
 // ============================================================
+// ── Historial: día seleccionado ──
+// Los movimientos se guardan siempre en la nube (colección "movimientos");
+// el día actual además vive en el teléfono. Días anteriores se consultan
+// desde Firestore, por lo que requieren conexión.
+let historyDate = todayISO();       // día que se está viendo (yyyy-mm-dd)
+let historyMovements = [];          // lo que se muestra en pantalla
+
+function todayISO() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+// La llaman caja/ajustes al registrar movimientos: actualiza la caché de hoy
+// y refresca la pantalla solo si se está viendo el día de hoy.
 function renderHistory(movements) {
   todayMovements = movements;
+  if (historyDate === todayISO()) displayHistory(movements);
+}
+
+function displayHistory(movements) {
+  historyMovements = movements;
   const list = $("#history-list");
-  $("#history-date").textContent = new Date().toLocaleDateString("es", {
+  const [y, m, d] = historyDate.split("-").map(Number);
+  $("#history-date").textContent = new Date(y, m - 1, d).toLocaleDateString("es", {
     weekday: "long",
     day: "numeric",
     month: "long",
   });
+  $("#history-empty").textContent =
+    historyDate === todayISO()
+      ? "Aún no hay movimientos registrados hoy."
+      : "No hay movimientos registrados este día.";
   $("#history-empty").classList.toggle("hidden", movements.length > 0);
   $("#export-csv-btn").disabled = movements.length === 0;
   list.innerHTML = movements.map(renderMovementRow).join("");
 }
 
+async function onHistoryDayChange() {
+  const value = $("#history-day").value || todayISO();
+  historyDate = value;
+
+  if (value === todayISO()) {
+    displayHistory(todayMovements);
+    return;
+  }
+
+  // Día pasado: se consulta la nube
+  $("#history-list").innerHTML = "";
+  $("#history-empty").textContent = "Cargando movimientos…";
+  $("#history-empty").classList.remove("hidden");
+  $("#export-csv-btn").disabled = true;
+  try {
+    const [y, m, d] = value.split("-").map(Number);
+    const start = new Date(y, m - 1, d, 0, 0, 0, 0);
+    const end = new Date(y, m - 1, d + 1, 0, 0, 0, 0);
+    const movs = await movementsApi.fetchRange(currentUser.uid, start, end);
+    displayHistory(movs);
+  } catch (e) {
+    if (isQuotaError && isQuotaError(e)) showQuotaBanner();
+    $("#history-empty").textContent =
+      "No se pudo cargar ese día. Revisá tu conexión e intentá de nuevo.";
+    $("#history-empty").classList.remove("hidden");
+  }
+}
+
 function exportHistoryCsv() {
-  if (todayMovements.length === 0) return;
+  if (historyMovements.length === 0) return;
   const headers = ["Fecha", "Hora", "Codigo", "Producto", "Accion", "Cantidad"];
-  const rows = todayMovements.map((m) => {
+  const rows = historyMovements.map((m) => {
     const d = new Date(m.ts || Date.now());
     return [
       d.toLocaleDateString("es"),
@@ -1611,7 +1725,7 @@ function exportHistoryCsv() {
   const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
-  const stamp = new Date().toISOString().slice(0, 10);
+  const stamp = historyDate;
   a.href = url;
   a.download = `movimientos-${stamp}.csv`;
   document.body.appendChild(a);
@@ -2145,11 +2259,21 @@ function bindEvents() {
   document.querySelectorAll(".inv-filter-btn").forEach((b) => {
     b.addEventListener("click", () => {
       inventoryFilter = b.dataset.filter;
+      $("#inventory-search").value = "";
       renderInventory();
     });
   });
 
   $("#export-csv-btn").addEventListener("click", exportHistoryCsv);
+  const historyDay = $("#history-day");
+  historyDay.value = todayISO();
+  historyDay.max = todayISO();
+  historyDay.addEventListener("change", onHistoryDayChange);
+  const salesDay = $("#sales-day");
+  salesDay.value = todayISO();
+  salesDay.max = todayISO();
+  salesDate = todayISO();
+  salesDay.addEventListener("change", onSalesDayChange);
 
   $("#op-plus").addEventListener("click", () => stepQty(1));
   $("#op-minus").addEventListener("click", () => stepQty(-1));

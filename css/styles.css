@@ -161,3 +161,200 @@ textarea:focus {
 .inv-filter-low {
   border-color: #dc2626 !important;
 }
+
+/* =====================================================
+   CAPA DE DISEÑO — tipografía, sidebar fijo y motion
+   ===================================================== */
+
+/* ─── Tipografía ───
+   Space Grotesk para títulos y cifras (carácter técnico, de balanza
+   y ticket); el cuerpo queda en la sans del sistema. Números tabulares
+   para que los precios se alineen como en una registradora. */
+h1, h2, h3, .sidebar-title {
+  font-family: 'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: -0.01em;
+}
+
+#pos-total, #pos-change, #se-total, #pos-count {
+  font-family: 'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+
+body {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ─── Sidebar fijo en negro (firma visual) ─── */
+.sidebar {
+  background: #0a0a0a;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.sidebar-divider {
+  height: 1px;
+  margin: 0 1.25rem 0.5rem;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* Los ítems del sidebar se colorean por CSS (anula los toggles
+   Tailwind text-brand / text-ink-40 que usa el nav inferior móvil). */
+.sidebar .nav-side {
+  color: rgba(255, 255, 255, 0.55) !important;
+  border: none !important;
+  transition: background-color 0.18s ease, color 0.18s ease, transform 0.18s ease;
+}
+
+.sidebar .nav-side:hover {
+  color: rgba(255, 255, 255, 0.9) !important;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.sidebar .nav-side:active {
+  transform: scale(0.98);
+}
+
+/* Ítem activo: píldora blanca invertida */
+.sidebar .nav-side.nav-active {
+  background: #ffffff;
+  color: #0a0a0a !important;
+  border: none !important;
+  font-weight: 600;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+}
+
+.sidebar .nav-side svg {
+  transition: transform 0.18s ease;
+}
+
+.sidebar .nav-side:hover svg {
+  transform: translateX(2px);
+}
+
+.sidebar .nav-side.nav-active:hover svg {
+  transform: none;
+}
+
+/* ─── Transiciones de paneles (cambio de módulo) ─── */
+.tab-panel:not(.hidden) {
+  animation: panel-in 0.24s cubic-bezier(0.2, 0, 0, 1);
+}
+
+@keyframes panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ─── Transición base unificada para controles ─── */
+button, input, select, textarea {
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease,
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    transform 0.15s ease,
+    opacity 0.15s ease;
+}
+
+/* Tarjetas interactivas: elevación sutil al pasar el mouse */
+#sales-list button,
+#pos-search-results li,
+#inventory-list [data-edit],
+#inventory-list li > button {
+  transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
+}
+
+#sales-list button:hover,
+#inventory-list [data-edit]:hover,
+#inventory-list li > button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08);
+}
+
+/* ─── Modales: entrada con easing profesional y fondo desenfocado ─── */
+.modal-backdrop {
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  animation: fade-in 0.18s ease-out;
+}
+
+.modal-sheet {
+  animation: slide-up 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@media (min-width: 768px) {
+  .modal-sheet {
+    animation: dialog-in 0.22s cubic-bezier(0.2, 0, 0, 1);
+  }
+}
+
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* ─── Toast ─── */
+#toast:not(.hidden) {
+  animation: toast-in 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 10px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+/* ─── Foco visible accesible ─── */
+:focus-visible {
+  outline: 2px solid #0a0a0a;
+  outline-offset: 2px;
+}
+
+.sidebar :focus-visible {
+  outline-color: #ffffff;
+}
+
+/* ─── Scrollbar discreto ─── */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #c4c4c4;
+  border-radius: 9999px;
+  border: 2px solid #f4f4f4;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #8a8a8a;
+}
+
+/* ─── Movimiento reducido: respeta la preferencia del sistema ─── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
