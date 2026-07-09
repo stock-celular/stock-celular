@@ -226,6 +226,22 @@ export const fiadoresApi = {
       { merge: true }
     );
   },
+
+  // Elimina a la persona y TODO su historial en la nube:
+  // ventas fiadas, abonos y su documento. Irreversible.
+  // No repone stock (eliminar registro ≠ anular venta).
+  async deleteWithHistory(uid, fiadoId) {
+    const ventasSnap = await getDocs(query(salesCol(uid), where("fiadoId", "==", fiadoId)));
+    for (const d of ventasSnap.docs) {
+      await deleteDoc(doc(db, "usuarios", uid, "ventas", d.id));
+    }
+    const abonosSnap = await getDocs(query(abonosCol(uid), where("fiadoId", "==", fiadoId)));
+    for (const d of abonosSnap.docs) {
+      await deleteDoc(doc(db, "usuarios", uid, "abonos", d.id));
+    }
+    await deleteDoc(fiadorDoc(uid, fiadoId));
+    return { ventas: ventasSnap.size, abonos: abonosSnap.size };
+  },
 };
 
 // ---------- Abonos (pagos totales o parciales de fiados) ----------

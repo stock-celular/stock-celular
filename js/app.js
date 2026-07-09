@@ -1099,6 +1099,67 @@ function renderSaldoBox(saldo) {
   }
 }
 
+// ── Eliminar fiador y todo su historial (requiere conexión) ──
+async function deleteFiador() {
+  const fiador = selectedFiado;
+  if (!fiador) return;
+
+  const saldoTxt =
+    (fiador.saldo ?? 0) > 0
+      ? ` OJO: todavía debe $${formatPrice(fiador.saldo)}.`
+      : "";
+  const ok = await showConfirm({
+    title: `Eliminar a ${fiador.nombre}`,
+    message:
+      "Se borrará la persona y TODO su historial: compras fiadas y abonos, también de los reportes de días anteriores. " +
+      "No repone stock. Esta acción no se puede deshacer." + saldoTxt,
+    confirmLabel: "Eliminar todo",
+    danger: true,
+  });
+  if (!ok) return;
+
+  // Requiere conexión: el borrado en la nube debe completarse primero
+  // para no dejar historial huérfano.
+  showToast("Eliminando historial…", "success");
+  try {
+    await fiadoresApi.deleteWithHistory(currentUser.uid, fiador.id);
+  } catch (e) {
+    if (isQuotaError && isQuotaError(e)) showQuotaBanner();
+    showToast("No se pudo eliminar. Revisá tu conexión e intentá de nuevo.", "error");
+    return;
+  }
+
+  // Limpieza local: persona, ventas y abonos de hoy, y operaciones en cola
+  fiadores = fiadores.filter((f) => f.id !== fiador.id);
+  await localDB.replaceFiadores(fiadores);
+
+  todaySales = todaySales.filter((v) => v.fiadoId !== fiador.id);
+  await localDB.replaceSales(todaySales);
+
+  todayAbonos = todayAbonos.filter((a) => a.fiadoId !== fiador.id);
+  await localDB.replaceAbonos(todayAbonos);
+
+  const pending = await localDB.getOutbox();
+  for (const op of pending) {
+    const opFiadoId =
+      op.payload?.fiador?.id ||
+      op.payload?.abono?.fiadoId ||
+      op.payload?.sale?.fiadoId ||
+      (op.type === "fiadorSaldo" ? op.payload?.id : null) ||
+      op.payload?.fiadoDelta?.fiadoId ||
+      null;
+    if (opFiadoId === fiador.id) await localDB.deleteFromOutbox(op.id);
+  }
+
+  selectedFiado = null;
+  selectedFiadoSaldo = 0;
+  $("#fiados-detail").classList.add("hidden");
+  renderFiadosPeople();
+  renderReports();
+  renderSales();
+  showToast(`${fiador.nombre} y su historial fueron eliminados`, "success");
+}
+
 async function openFiadoDetail(fiador) {
   selectedFiado = fiador;
   renderFiadosPeople();
@@ -3079,6 +3140,7 @@ function bindEvents() {
   $("#fiados-create-btn").addEventListener("click", createFiadoFromModule);
   $("#fiados-entry-btn").addEventListener("click", openFiadoEntry);
   $("#fiados-pay-btn").addEventListener("click", openAbonoModal);
+  $("#fiados-delete-btn").addEventListener("click", deleteFiador);
   $("#fiados-history-btn").addEventListener("click", loadFullFiadoHistory);
   $("#fiados-export-btn").addEventListener("click", exportFiadosXlsx);
   $("#ab-total-btn").addEventListener("click", () => { $("#ab-monto").value = selectedFiadoSaldo; });
