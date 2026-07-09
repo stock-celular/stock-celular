@@ -7,9 +7,11 @@
 // ============================================================
 
 const DB_NAME = "stock-barrio";
-const DB_VERSION = 2;
+const DB_VERSION = 4;
 const STORES = {
   productos: { keyPath: "codigo" },
+  fiadores: { keyPath: "id" },
+  abonos: { keyPath: "id", autoIncrement: true },
   movimientos: { keyPath: "id", autoIncrement: true },
   ventas: { keyPath: "id", autoIncrement: true },
   meta: { keyPath: "key" },
@@ -134,6 +136,49 @@ export const localDB = {
   async addSale(v) {
     const db = await openDB();
     return reqToPromise(db.transaction("ventas", "readwrite").objectStore("ventas").put(v));
+  },
+
+  // ---------- Fiadores (clientes con cuenta corriente) ----------
+  async getFiadores() {
+    const db = await openDB();
+    return reqToPromise(db.transaction("fiadores").objectStore("fiadores").getAll());
+  },
+  async putFiador(f) {
+    const db = await openDB();
+    return reqToPromise(db.transaction("fiadores", "readwrite").objectStore("fiadores").put(f));
+  },
+  async replaceFiadores(list) {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const t = db.transaction("fiadores", "readwrite");
+      const s = t.objectStore("fiadores");
+      s.clear();
+      (list || []).forEach((f) => s.put(f));
+      t.oncomplete = () => resolve(true);
+      t.onerror = () => reject(t.error);
+    });
+  },
+
+  // ---------- Abonos del día (pagos de fiados) ----------
+  async getTodayAbonos() {
+    const db = await openDB();
+    const all = await reqToPromise(db.transaction("abonos").objectStore("abonos").getAll());
+    return all.sort((a, b) => (b.ts || 0) - (a.ts || 0));
+  },
+  async addAbono(a) {
+    const db = await openDB();
+    return reqToPromise(db.transaction("abonos", "readwrite").objectStore("abonos").put(a));
+  },
+  async replaceAbonos(list) {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const t = db.transaction("abonos", "readwrite");
+      const s = t.objectStore("abonos");
+      s.clear();
+      (list || []).forEach((a) => s.put(a));
+      t.oncomplete = () => resolve(true);
+      t.onerror = () => reject(t.error);
+    });
   },
 
   // ---------- Marca de sincronización ----------

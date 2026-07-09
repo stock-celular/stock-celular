@@ -68,6 +68,25 @@ function movementsCol(uid) {
 function salesCol(uid) {
   return collection(db, "usuarios", uid, "ventas");
 }
+function fiadoresCol(uid) {
+  return collection(db, "usuarios", uid, "fiadores");
+}
+function abonosCol(uid) {
+  return collection(db, "usuarios", uid, "abonos");
+}
+
+// Ajusta el saldo de un fiador de forma atómica (increment).
+// delta > 0 = debe más (fiado nuevo); delta < 0 = debe menos (abono/anulación).
+function adjustFiadorSaldo(uid, fiadoId, delta, ts) {
+  return setDoc(
+    fiadorDoc(uid, fiadoId),
+    { saldo: increment(delta), ultimoMovimiento: ts || Date.now() },
+    { merge: true }
+  );
+}
+function fiadorDoc(uid, id) {
+  return doc(db, "usuarios", uid, "fiadores", id);
+}
 
 // ---------- Perfil de usuario ----------
 export const usersApi = {
@@ -182,6 +201,122 @@ export const movementsApi = {
   },
 };
 
+// ---------- Fiadores (clientes con cuenta corriente) ----------
+export const fiadoresApi = {
+  async fetchAll(uid) {
+    const snap = await getDocs(query(fiadoresCol(uid), orderBy("nombre")));
+    return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  },
+
+  // El documento usa el nombre normalizado como id: dos personas con el
+  // mismo nombre chocan en el mismo doc, así los nombres no se repiten.
+  async save(uid, fiador) {
+    await setDoc(
+      fiadorDoc(uid, fiador.id),
+      { nombre: fiador.nombre, creado: serverTimestamp() },
+      { merge: true }
+    );
+  },
+
+  // Migración: fija el saldo absoluto (calculado del historial una sola vez).
+  async setSaldo(uid, id, saldo, ts) {
+    await setDoc(
+      fiadorDoc(uid, id),
+      { saldo, ultimoMovimiento: ts || Date.now() },
+      { merge: true }
+    );
+  },
+};
+
+// ---------- Abonos (pagos totales o parciales de fiados) ----------
+export const abonosApi = {
+  async commit(uid, abono) {
+    await addDoc(abonosCol(uid), {
+      fiadoId: abono.fiadoId,
+      fiadoNombre: abono.fiadoNombre || "",
+      monto: abono.monto || 0,
+      metodoPago: abono.metodoPago || "efectivo",
+      ts: abono.ts || Date.now(),
+      fecha: serverTimestamp(),
+    });
+    await adjustFiadorSaldo(uid, abono.fiadoId, -(abono.monto || 0), abono.ts);
+  },
+
+  // Anula un abono: borra el documento (ubicado por ts) y devuelve la deuda.
+  async revert(uid, abono) {
+    if (abono.ts) {
+      const q = query(abonosCol(uid), where("ts", "==", abono.ts));
+      const snap = await getDocs(q);
+      for (const d of snap.docs) {
+        await deleteDoc(doc(db, "usuarios", uid, "abonos", d.id));
+      }
+    }
+    await adjustFiadorSaldo(uid, abono.fiadoId, abono.monto || 0);
+  },
+
+  async fetchRange(uid, start, end) {
+    const q = query(
+      abonosCol(uid),
+      where("fecha", ">=", Timestamp.fromDate(start)),
+      where("fecha", "<", Timestamp.fromDate(end)),
+      orderBy("fecha", "desc")
+    );
+    const snap = await getDocs(q);
+    return snap.docs.map((d) => {
+      const data = d.data();
+      const fecha = data.fecha?.toDate ? data.fecha.toDate() : new Date();
+      return {
+        fiadoId: data.fiadoId || null,
+        fiadoNombre: data.fiadoNombre || "",
+        monto: data.monto || 0,
+        metodoPago: data.metodoPago || "efectivo",
+        ts: data.ts || fecha.getTime(),
+      };
+    });
+  },
+
+  async fetchToday(uid) {
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    const q = query(
+      abonosCol(uid),
+      where("fecha", ">=", Timestamp.fromDate(start)),
+      orderBy("fecha", "desc")
+    );
+    const snap = await getDocs(q);
+    return snap.docs.map((d) => {
+      const data = d.data();
+      const fecha = data.fecha?.toDate ? data.fecha.toDate() : new Date();
+      return {
+        fiadoId: data.fiadoId || null,
+        fiadoNombre: data.fiadoNombre || "",
+        monto: data.monto || 0,
+        metodoPago: data.metodoPago || "efectivo",
+        ts: data.ts || fecha.getTime(),
+      };
+    });
+  },
+
+  // Todos los abonos de una persona (un solo where → sin índice compuesto)
+  async fetchByFiado(uid, fiadoId) {
+    const q = query(abonosCol(uid), where("fiadoId", "==", fiadoId));
+    const snap = await getDocs(q);
+    return snap.docs
+      .map((d) => {
+        const data = d.data();
+        const fecha = data.fecha?.toDate ? data.fecha.toDate() : new Date();
+        return {
+          fiadoId: data.fiadoId || null,
+          fiadoNombre: data.fiadoNombre || "",
+          monto: data.monto || 0,
+          metodoPago: data.metodoPago || "efectivo",
+          ts: data.ts || fecha.getTime(),
+        };
+      })
+      .sort((a, b) => (b.ts || 0) - (a.ts || 0));
+  },
+};
+
 // ---------- Ventas (caja) ----------
 export const salesApi = {
   async commit(uid, sale) {
@@ -206,9 +341,14 @@ export const salesApi = {
       total: sale.total,
       metodoPago: sale.metodoPago,
       items: sale.items,
+      fiadoId: sale.fiadoId || null,
+      fiadoNombre: sale.fiadoNombre || null,
       ts: sale.ts || Date.now(), // marca local: permite ubicar la venta al anularla
       fecha: serverTimestamp(),
     });
+    if (sale.fiadoId) {
+      await adjustFiadorSaldo(uid, sale.fiadoId, sale.total || 0, sale.ts);
+    }
   },
 
   // Anula una venta ya subida: repone stock, registra movimientos de
@@ -236,12 +376,18 @@ export const salesApi = {
         await deleteDoc(doc(db, "usuarios", uid, "ventas", d.id));
       }
     }
+    if (sale.fiadoId) {
+      await adjustFiadorSaldo(uid, sale.fiadoId, -(sale.total || 0));
+    }
   },
 
   // Corrige una venta ya subida: aplica los deltas de stock, registra
   // movimientos de ajuste y actualiza el documento (ubicado por su ts local).
   // delta > 0 devuelve stock; delta < 0 descuenta más.
-  async update(uid, sale, deltas) {
+  async update(uid, sale, deltas, fiadoDelta) {
+    if (fiadoDelta && fiadoDelta.fiadoId && fiadoDelta.delta) {
+      await adjustFiadorSaldo(uid, fiadoDelta.fiadoId, fiadoDelta.delta);
+    }
     for (const d of deltas || []) {
       await updateDoc(productDoc(uid, d.codigo), {
         cantidad: increment(d.delta),
@@ -263,6 +409,8 @@ export const salesApi = {
           total: sale.total,
           metodoPago: sale.metodoPago,
           items: sale.items,
+          fiadoId: sale.fiadoId || null,
+          fiadoNombre: sale.fiadoNombre || null,
         });
       }
     }
@@ -284,9 +432,30 @@ export const salesApi = {
         total: data.total || 0,
         metodoPago: data.metodoPago || "otro",
         items: data.items || [],
+        fiadoId: data.fiadoId || null,
+        fiadoNombre: data.fiadoNombre || null,
         ts: data.ts || fecha.getTime(),
       };
     });
+  },
+
+  async fetchByFiado(uid, fiadoId) {
+    const q = query(salesCol(uid), where("fiadoId", "==", fiadoId));
+    const snap = await getDocs(q);
+    return snap.docs
+      .map((d) => {
+        const data = d.data();
+        const fecha = data.fecha?.toDate ? data.fecha.toDate() : new Date();
+        return {
+          total: data.total || 0,
+          metodoPago: data.metodoPago || "otro",
+          items: data.items || [],
+          fiadoId: data.fiadoId || null,
+          fiadoNombre: data.fiadoNombre || null,
+          ts: data.ts || fecha.getTime(),
+        };
+      })
+      .sort((a, b) => (b.ts || 0) - (a.ts || 0));
   },
 
   async fetchRange(uid, start, end) {
@@ -304,6 +473,8 @@ export const salesApi = {
         total: data.total || 0,
         metodoPago: data.metodoPago || "otro",
         items: data.items || [],
+        fiadoId: data.fiadoId || null,
+        fiadoNombre: data.fiadoNombre || null,
         ts: data.ts || fecha.getTime(),
       };
     });

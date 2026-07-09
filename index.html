@@ -133,6 +133,10 @@
             <svg class="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
             <span class="text-sm font-medium">Ventas</span>
           </button>
+          <button data-tab="tab-fiados" class="nav-btn nav-side flex items-center gap-3 rounded-xl px-3 py-2.5 text-left">
+            <svg class="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/><path d="M21 21v-2a4 4 0 0 0-3-3.87"/></svg>
+            <span class="text-sm font-medium">Fiados</span>
+          </button>
           <button data-tab="tab-scan" class="nav-btn nav-side flex items-center gap-3 rounded-xl px-3 py-2.5 text-left">
             <svg class="h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5v14M7 5v14M11 5v14M14 5v14M18 5v14M21 5v14"/></svg>
             <span class="text-sm font-medium">Escanear</span>
@@ -229,6 +233,7 @@
                 </div>
 
                 <p class="mt-5 mb-2 text-sm font-medium text-ink/80">Método de pago</p>
+                <p id="pos-fiado-chip" class="mb-2 hidden items-center gap-2 rounded-xl bg-ink px-3 py-2 text-sm font-semibold text-white"></p>
                 <div id="pos-methods" class="grid grid-cols-2 gap-2"></div>
 
                 <!-- Efectivo: paga con / vuelto -->
@@ -281,6 +286,71 @@
             <p id="sales-summary" class="mt-3 hidden rounded-xl bg-paper px-4 py-2.5 text-sm font-semibold text-ink"></p>
             <ul id="sales-list" class="mt-3 space-y-2"></ul>
             <p id="sales-empty" class="py-10 text-center text-sm text-ink/40">Todavía no hay ventas hoy.</p>
+          </div>
+        </section>
+
+        <!-- ====== TAB: FIADOS (cuentas por persona) ====== -->
+        <section id="tab-fiados" class="tab-panel hidden">
+          <div class="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-ink/10 md:p-5">
+            <div class="flex items-start justify-between">
+              <div>
+                <h2 class="text-base font-semibold text-ink">Fiados</h2>
+                <p class="mt-1 text-sm text-ink/50">Busca una persona para ver su cuenta.</p>
+              </div>
+              <button id="fiados-export-btn"
+                class="flex shrink-0 items-center gap-1.5 rounded-lg border border-ink/15 px-3 py-1.5 text-xs font-semibold text-ink/80 transition active:scale-95 hover:bg-paper">
+                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                Excel
+              </button>
+            </div>
+            <input id="fiados-search" type="search" autocomplete="off" placeholder="Buscar o crear persona…"
+              class="mt-3 w-full rounded-xl border-ink/15 text-base focus:border-brand focus:ring-brand" />
+            <button id="fiados-create-btn" type="button"
+              class="mt-2 hidden w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-ink/25 bg-white py-2.5 text-sm font-semibold text-ink/70 transition active:scale-[0.99] hover:border-ink/50 hover:text-ink">
+            </button>
+            <ul id="fiados-people" class="mt-3 space-y-2"></ul>
+            <p id="fiados-people-empty" class="hidden py-8 text-center text-sm text-ink/40">No hay personas registradas todavía. Escribe un nombre arriba para crear la primera.</p>
+          </div>
+
+          <div id="fiados-detail" class="mt-4 hidden rounded-2xl bg-white p-4 shadow-sm ring-1 ring-ink/10 md:p-5">
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <h3 id="fiados-person-name" class="text-base font-semibold text-ink"></h3>
+                <p id="fiados-person-count" class="mt-0.5 text-sm text-ink/50"></p>
+              </div>
+            </div>
+            <div class="mt-3 grid grid-cols-3 gap-2 text-center">
+              <div class="rounded-xl bg-paper px-2 py-2.5">
+                <p class="text-[11px] uppercase tracking-wide text-ink/40">Fiado</p>
+                <p id="fiados-person-total" class="text-base font-bold text-ink">$0</p>
+              </div>
+              <div class="rounded-xl bg-paper px-2 py-2.5">
+                <p class="text-[11px] uppercase tracking-wide text-ink/40">Abonado</p>
+                <p id="fiados-person-paid" class="text-base font-bold text-ink">$0</p>
+              </div>
+              <div class="rounded-xl bg-ink px-2 py-2.5">
+                <p id="fiados-balance-label" class="text-[11px] uppercase tracking-wide text-white/50">Debe</p>
+                <p id="fiados-person-balance" class="text-base font-bold text-white">$0</p>
+              </div>
+            </div>
+            <div class="mt-3 flex gap-2">
+              <button id="fiados-entry-btn" type="button"
+                class="flex flex-1 items-center justify-center gap-2 rounded-xl bg-brand py-2.5 text-sm font-semibold text-white shadow-sm transition active:scale-[0.98] hover:bg-brand-dark">
+                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                Anotar fiado
+              </button>
+              <button id="fiados-pay-btn" type="button" disabled
+                class="flex flex-1 items-center justify-center gap-2 rounded-xl bg-white py-2.5 text-sm font-semibold text-ink transition active:scale-[0.98] hover:bg-paper disabled:opacity-40">
+                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
+                Saldar deuda
+              </button>
+            </div>
+            <button id="fiados-history-btn" type="button"
+              class="mt-3 hidden w-full rounded-xl border border-ink/15 bg-white py-2 text-xs font-semibold text-ink/60 transition active:scale-[0.99] hover:bg-paper">
+              Ver historial completo
+            </button>
+            <ul id="fiados-purchases" class="mt-3 space-y-2"></ul>
+            <p id="fiados-purchases-empty" class="hidden py-8 text-center text-sm text-ink/40">Esta persona no tiene compras fiadas.</p>
           </div>
         </section>
 
@@ -385,6 +455,31 @@
           <h3 class="mt-5 text-[11px] font-semibold uppercase tracking-wide text-[#8a8a8a]">Por método de pago</h3>
           <ul id="rep-methods" class="mt-2 space-y-2"></ul>
           <p id="rep-methods-empty" class="hidden rounded-xl bg-white px-4 py-6 text-center text-sm text-ink/40 ring-1 ring-ink/10">Todavía no hay ventas hoy.</p>
+
+          <h3 class="mt-5 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-[#8a8a8a]">
+            <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+            Fiados (hoy)
+          </h3>
+          <div class="mt-2 grid grid-cols-2 gap-2">
+            <div class="rounded-2xl bg-white p-3 shadow-sm ring-1 ring-ink/10">
+              <p class="text-[11px] uppercase tracking-wide text-ink/40">Fiado hoy</p>
+              <p id="rep-fiado-total" class="mt-1 text-xl font-bold text-ink">$0</p>
+              <p id="rep-fiado-count" class="text-xs text-ink/40"></p>
+            </div>
+            <div class="rounded-2xl bg-white p-3 shadow-sm ring-1 ring-ink/10">
+              <p class="text-[11px] uppercase tracking-wide text-ink/40">Abonos recibidos</p>
+              <p id="rep-abonos-total" class="mt-1 text-xl font-bold text-ink">$0</p>
+              <p id="rep-abonos-count" class="text-xs text-ink/40"></p>
+            </div>
+          </div>
+          <div class="mt-2 flex items-center justify-between rounded-2xl bg-ink p-3 text-white shadow-sm">
+            <div>
+              <p class="text-[11px] uppercase tracking-wide text-white/50">Por cobrar (total)</p>
+              <p id="rep-por-cobrar-count" class="text-xs text-white/50"></p>
+            </div>
+            <p id="rep-por-cobrar" class="text-2xl font-bold">$0</p>
+          </div>
+          <ul id="rep-abonos" class="mt-2 space-y-2"></ul>
 
           <h3 class="mt-5 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-[#8a8a8a]">
             <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
@@ -563,6 +658,7 @@
               <p id="stats-best-day" class="mt-1 text-base font-bold text-ink">—</p>
             </div>
           </div>
+          <p id="stats-abonos" class="mt-2 hidden rounded-xl bg-white px-4 py-2.5 text-sm text-ink/70 ring-1 ring-ink/10"></p>
 
           <!-- Gráfico: ventas por día -->
           <div class="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-ink/10">
@@ -599,7 +695,7 @@
 
       <!-- Bottom nav (celular) -->
       <nav class="fixed inset-x-0 bottom-0 z-20 border-t border-ink/10 bg-white md:hidden">
-        <div class="mx-auto grid max-w-2xl grid-cols-7">
+        <div class="mx-auto grid max-w-2xl grid-cols-8">
           <button data-tab="tab-pos" class="nav-btn flex flex-col items-center gap-1 py-2.5 text-brand">
             <svg class="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="21" r="1"/><circle cx="19" cy="21" r="1"/><path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12"/></svg>
             <span class="text-[10px] font-medium">Caja</span>
@@ -607,6 +703,10 @@
           <button data-tab="tab-sales" class="nav-btn flex flex-col items-center gap-1 py-2.5 text-ink/40">
             <svg class="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
             <span class="text-[10px] font-medium">Ventas</span>
+          </button>
+          <button data-tab="tab-fiados" class="nav-btn flex flex-col items-center gap-1 py-2.5 text-ink/40">
+            <svg class="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/><path d="M21 21v-2a4 4 0 0 0-3-3.87"/></svg>
+            <span class="text-[10px] font-medium">Fiados</span>
           </button>
           <button data-tab="tab-scan" class="nav-btn flex flex-col items-center gap-1 py-2.5 text-brand">
             <svg class="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5v14M7 5v14M11 5v14M14 5v14M18 5v14M21 5v14"/></svg>
@@ -843,6 +943,106 @@
           <button id="se-save-btn" type="button"
             class="flex-1 rounded-xl bg-brand py-3 font-semibold text-white shadow-sm transition active:scale-[0.98] hover:bg-brand-dark">
             Guardar cambios
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ MODAL: FIADO — ELEGIR O CREAR PERSONA ============ -->
+    <div id="fiado-modal" class="modal hidden">
+      <div class="modal-backdrop" data-close="fiado-modal"></div>
+      <div class="modal-sheet">
+        <h3 class="text-lg font-bold text-ink">¿A quién se le fía?</h3>
+        <p class="mt-1 text-sm text-ink/50">Busca por nombre. Si no existe, se crea desde acá. Los nombres no se repiten.</p>
+        <input id="fiado-search" type="search" autocomplete="off" placeholder="Nombre de la persona…"
+          class="mt-4 w-full rounded-xl border-ink/15 text-base focus:border-brand focus:ring-brand" />
+        <ul id="fiado-matches" class="mt-3 max-h-52 space-y-1.5 overflow-y-auto"></ul>
+        <button id="fiado-create-btn" type="button"
+          class="mt-2 hidden w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-ink/25 bg-white py-2.5 text-sm font-semibold text-ink/70 transition active:scale-[0.99] hover:border-ink/50 hover:text-ink">
+        </button>
+      </div>
+    </div>
+
+    <!-- ============ MODAL: ANOTAR FIADO MANUAL (cuaderno) ============ -->
+    <div id="fiado-entry-modal" class="modal hidden">
+      <div class="modal-backdrop" data-close="fiado-entry-modal"></div>
+      <div class="modal-sheet">
+        <div class="flex items-start justify-between">
+          <div>
+            <h3 class="text-lg font-bold text-ink">Anotar fiado</h3>
+            <p id="fe-person" class="mt-0.5 text-sm text-ink/50"></p>
+          </div>
+          <span id="fe-total" class="text-2xl font-bold text-ink">$0</span>
+        </div>
+
+        <!-- Buscar productos del inventario (descuentan stock) -->
+        <div class="relative mt-4">
+          <input id="fe-search" type="search" autocomplete="off" placeholder="Buscar producto del inventario…"
+            class="w-full rounded-xl border-ink/15 text-base focus:border-brand focus:ring-brand" />
+          <ul id="fe-results" class="absolute inset-x-0 top-full z-10 mt-1 hidden max-h-44 overflow-y-auto rounded-xl border border-ink/15 bg-white shadow-lg"></ul>
+        </div>
+
+        <!-- Líneas anotadas -->
+        <ul id="fe-lines" class="mt-3 max-h-44 space-y-2 overflow-y-auto"></ul>
+
+        <!-- Línea libre (sin producto asociado, no descuenta stock) -->
+        <div class="mt-3 flex items-end gap-2">
+          <div class="min-w-0 flex-1">
+            <label for="fe-detalle" class="mb-1 block text-xs font-medium text-ink/60">Línea libre (no descuenta stock)</label>
+            <input id="fe-detalle" type="text" autocomplete="off" placeholder="Ej: 1kg pan…"
+              class="w-full rounded-xl border-ink/15 text-sm focus:border-brand focus:ring-brand" />
+          </div>
+          <input id="fe-valor" type="number" inputmode="numeric" min="0" step="1" placeholder="$"
+            class="w-24 rounded-xl border-ink/15 text-sm focus:border-brand focus:ring-brand" />
+          <button id="fe-add-line-btn" type="button"
+            class="h-[42px] shrink-0 rounded-xl border-2 border-dashed border-ink/25 bg-white px-3 text-sm font-semibold text-ink/70 transition active:scale-[0.98] hover:border-ink/50 hover:text-ink">
+            +
+          </button>
+        </div>
+
+        <div class="mt-5 flex gap-3">
+          <button type="button" data-close="fiado-entry-modal"
+            class="flex-1 rounded-xl bg-white py-3 font-semibold text-ink/60 transition hover:bg-paper">
+            Cancelar
+          </button>
+          <button id="fe-save-btn" type="button"
+            class="flex-1 rounded-xl bg-brand py-3 font-semibold text-white shadow-sm transition active:scale-[0.98] hover:bg-brand-dark">
+            Anotar
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ MODAL: SALDAR DEUDA (abono total o parcial) ============ -->
+    <div id="abono-modal" class="modal hidden">
+      <div class="modal-backdrop" data-close="abono-modal"></div>
+      <div class="modal-sheet">
+        <h3 class="text-lg font-bold text-ink">Saldar deuda</h3>
+        <p id="ab-person" class="mt-1 text-sm text-ink/50"></p>
+
+        <div class="mt-4 flex items-end gap-2">
+          <div class="min-w-0 flex-1">
+            <label for="ab-monto" class="mb-1 block text-sm font-medium text-ink/80">Monto a abonar</label>
+            <input id="ab-monto" type="number" inputmode="numeric" min="0" step="1" placeholder="0"
+              class="w-full rounded-xl border-ink/15 text-base focus:border-brand focus:ring-brand" />
+          </div>
+          <button id="ab-total-btn" type="button"
+            class="h-[46px] shrink-0 rounded-xl border border-ink/15 bg-white px-4 text-sm font-semibold text-ink transition active:scale-[0.98] hover:bg-paper">
+            Total
+          </button>
+        </div>
+
+        <p class="mt-4 mb-2 text-sm font-medium text-ink/80">¿Cómo paga?</p>
+        <div id="ab-methods" class="grid grid-cols-2 gap-2"></div>
+
+        <div class="mt-5 flex gap-3">
+          <button type="button" data-close="abono-modal"
+            class="flex-1 rounded-xl bg-white py-3 font-semibold text-ink/60 transition hover:bg-paper">
+            Cancelar
+          </button>
+          <button id="ab-save-btn" type="button"
+            class="flex-1 rounded-xl bg-brand py-3 font-semibold text-white shadow-sm transition active:scale-[0.98] hover:bg-brand-dark">
+            Registrar abono
           </button>
         </div>
       </div>
