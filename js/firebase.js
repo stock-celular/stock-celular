@@ -226,6 +226,12 @@ export const fiadoresApi = {
     );
   },
 
+  // Cupo de crédito: monto máximo que la persona puede deber.
+  // cupo = null → sin límite.
+  async setCupo(uid, id, cupo) {
+    await setDoc(fiadorDoc(uid, id), { cupo: cupo ?? null }, { merge: true });
+  },
+
   // Migración: fija el saldo absoluto (calculado del historial una sola vez).
   async setSaldo(uid, id, saldo, ts) {
     await setDoc(

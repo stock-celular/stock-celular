@@ -337,6 +337,27 @@
                 <p id="fiados-person-balance" class="text-base font-bold text-white">$0</p>
               </div>
             </div>
+
+            <!-- Cupo de crédito -->
+            <div id="fiados-cupo-box" class="mt-2 rounded-xl border border-ink/10 bg-paper px-3 py-2.5">
+              <div class="flex items-center justify-between gap-2">
+                <div class="min-w-0">
+                  <p class="text-[11px] uppercase tracking-wide text-ink/40">Cupo de crédito</p>
+                  <p id="fiados-cupo-text" class="mt-0.5 text-sm font-semibold text-ink">Sin límite</p>
+                </div>
+                <button id="fiados-cupo-btn" type="button" aria-label="Editar cupo"
+                  class="flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-ink/15 bg-white px-2.5 text-xs font-semibold text-ink/70 transition active:scale-[0.98] hover:bg-paper hover:text-ink">
+                  <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+                  Editar
+                </button>
+              </div>
+              <div id="fiados-cupo-bar-wrap" class="mt-2 hidden">
+                <div class="h-1.5 w-full overflow-hidden rounded-full bg-ink/10">
+                  <div id="fiados-cupo-bar" class="h-full rounded-full bg-ink transition-all" style="width:0%"></div>
+                </div>
+                <p id="fiados-cupo-disp" class="mt-1 text-xs text-ink/50"></p>
+              </div>
+            </div>
             <div class="mt-3 flex gap-2">
               <button id="fiados-entry-btn" type="button"
                 class="flex flex-1 items-center justify-center gap-2 rounded-xl bg-brand py-2.5 text-sm font-semibold text-white shadow-sm transition active:scale-[0.98] hover:bg-brand-dark">
@@ -1018,6 +1039,35 @@
     </div>
 
     <!-- ============ MODAL: SALDAR DEUDA (abono total o parcial) ============ -->
+    <!-- ============ MODAL: CUPO DE CRÉDITO ============ -->
+    <div id="cupo-modal" class="modal hidden">
+      <div class="modal-backdrop" data-close="cupo-modal"></div>
+      <div class="modal-sheet">
+        <h3 class="text-lg font-bold text-ink">Cupo de crédito</h3>
+        <p id="cupo-person" class="mt-1 text-sm text-ink/50"></p>
+
+        <label for="cupo-monto" class="mt-4 mb-1 block text-sm font-medium text-ink/80">Monto máximo que puede deber</label>
+        <input id="cupo-monto" type="number" inputmode="numeric" min="0" step="1" placeholder="Ej: 20000"
+          class="w-full rounded-xl border-ink/15 text-base focus:border-brand focus:ring-brand" />
+        <p id="cupo-hint" class="mt-2 text-xs text-ink/50">Al llegar al cupo no se le podrá fiar más hasta que abone. Dejalo vacío o en 0 para no poner límite.</p>
+
+        <div class="mt-5 flex gap-3">
+          <button type="button" data-close="cupo-modal"
+            class="flex-1 rounded-xl bg-white py-3 font-semibold text-ink/60 transition hover:bg-paper">
+            Cancelar
+          </button>
+          <button id="cupo-remove-btn" type="button"
+            class="hidden flex-1 rounded-xl border border-ink/15 bg-white py-3 font-semibold text-ink/70 transition active:scale-[0.98] hover:bg-paper">
+            Quitar límite
+          </button>
+          <button id="cupo-save-btn" type="button"
+            class="flex-1 rounded-xl bg-brand py-3 font-semibold text-white shadow-sm transition active:scale-[0.98] hover:bg-brand-dark">
+            Guardar
+          </button>
+        </div>
+      </div>
+    </div>
+
     <div id="abono-modal" class="modal hidden">
       <div class="modal-backdrop" data-close="abono-modal"></div>
       <div class="modal-sheet">

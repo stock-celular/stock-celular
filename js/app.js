@@ -274,6 +274,8 @@ async function flushOutbox() {
           await abonosApi.revert(op.uid, op.payload.abono);
         } else if (op.type === "fiadorSaldo") {
           await fiadoresApi.setSaldo(op.uid, op.payload.id, op.payload.saldo, op.payload.ts);
+        } else if (op.type === "fiadorCupo") {
+          await fiadoresApi.setCupo(op.uid, op.payload.id, op.payload.cupo);
         }
         await localDB.deleteFromOutbox(op.id);
       } catch (e) {
@@ -697,7 +699,12 @@ function updateFiadoChip() {
   const chip = $("#pos-fiado-chip");
   if (!chip) return;
   if (posFiado) {
-    chip.textContent = `Fiado a: ${posFiado.nombre}`;
+    const f = fiadores.find((x) => x.id === posFiado.id) || posFiado;
+    const disp = cupoDisponible(f);
+    chip.textContent =
+      disp == null
+        ? `Fiado a: ${posFiado.nombre}`
+        : `Fiado a: ${posFiado.nombre} · cupo disp. $${formatPrice(Math.max(0, disp))}`;
     chip.classList.remove("hidden");
     chip.classList.add("flex");
   } else {
@@ -794,6 +801,14 @@ function selectFiado(fiador) {
   posMethod = "fiado";
   closeModal("fiado-modal");
   updateFiadoChip();
+
+  // Aviso inmediato de cupo (el bloqueo duro está en el cobro)
+  const disp = cupoDisponible(fiador);
+  if (disp != null && disp <= 0) {
+    showToast(`${fiador.nombre} tiene el cupo agotado ($${formatPrice(cupoOf(fiador))}). Debe abonar antes de fiar.`, "error");
+  } else if (disp != null) {
+    showToast(`A ${fiador.nombre} le quedan $${formatPrice(disp)} de cupo`, "info");
+  }
   renderPosMethods();
   $("#pos-cash").classList.add("hidden");
   posUpdateCash();
@@ -1043,7 +1058,11 @@ function renderFiadosPeople() {
       if (f.saldo == null) {
         chip = `<span class="shrink-0 text-xs ${active ? "text-white/40" : "text-ink/30"}">—</span>`;
       } else if (f.saldo > 0) {
-        chip = `<span class="shrink-0 text-sm font-bold ${active ? "text-white" : "text-ink"}">$${formatPrice(f.saldo)}</span>`;
+        const disp = cupoDisponible(f);
+        const tope = disp != null && disp <= 0
+          ? `<span class="mr-1 shrink-0 rounded-full ${active ? "bg-white text-ink" : "bg-red-600 text-white"} px-2 py-0.5 text-[10px] font-bold uppercase">Tope</span>`
+          : "";
+        chip = `${tope}<span class="shrink-0 text-sm font-bold ${active ? "text-white" : "text-ink"}">$${formatPrice(f.saldo)}</span>`;
       } else if (f.saldo < 0) {
         chip = `<span class="shrink-0 rounded-full ${active ? "bg-white/15 text-white" : "bg-ink/10 text-ink/70"} px-2 py-0.5 text-[11px] font-semibold">A favor $${formatPrice(Math.abs(f.saldo))}</span>`;
       } else {
@@ -1085,6 +1104,105 @@ async function applyFiadoDeltaLocal(fiadoId, delta, ts) {
   }
   renderFiadosPeople();
   renderReports();
+  renderCupoBox();
+}
+
+// ============================================================
+//  Cupo de crédito (límite de fiado por persona)
+// ============================================================
+// cupo definido = número > 0. null/0/ausente = sin límite.
+function cupoOf(fiador) {
+  const c = fiador?.cupo;
+  return typeof c === "number" && c > 0 ? c : null;
+}
+
+// Disponible = cupo − deuda actual (puede ser negativo si ya lo excedió,
+// p. ej. si el cupo se fijó después de acumular deuda).
+function cupoDisponible(fiador) {
+  const cupo = cupoOf(fiador);
+  if (cupo == null) return null;
+  return cupo - Math.max(0, fiador.saldo ?? 0);
+}
+
+// Valida si se le puede fiar `monto` más. Devuelve null si pasa,
+// o el mensaje de error a mostrar si no.
+function cupoError(fiador, monto) {
+  const disp = cupoDisponible(fiador);
+  if (disp == null) return null; // sin límite
+  if (monto <= disp) return null;
+  if (disp <= 0) {
+    return `${fiador.nombre} llegó a su cupo de $${formatPrice(cupoOf(fiador))}. Debe abonar antes de fiar de nuevo.`;
+  }
+  return `Supera el cupo de ${fiador.nombre}: le quedan $${formatPrice(disp)} disponibles (cupo $${formatPrice(cupoOf(fiador))}).`;
+}
+
+// Pinta la caja de cupo en el detalle del fiador seleccionado.
+function renderCupoBox() {
+  const f = selectedFiado ? fiadores.find((x) => x.id === selectedFiado.id) : null;
+  const textEl = $("#fiados-cupo-text");
+  if (!textEl || !f) return;
+  const cupo = cupoOf(f);
+  const barWrap = $("#fiados-cupo-bar-wrap");
+  if (cupo == null) {
+    textEl.textContent = "Sin límite";
+    barWrap.classList.add("hidden");
+    return;
+  }
+  const deuda = Math.max(0, f.saldo ?? 0);
+  const disp = cupo - deuda;
+  const pct = Math.min(100, Math.round((deuda / cupo) * 100));
+  textEl.textContent = `$${formatPrice(cupo)}`;
+  barWrap.classList.remove("hidden");
+  const bar = $("#fiados-cupo-bar");
+  bar.style.width = `${pct}%`;
+  bar.className = `h-full rounded-full transition-all ${disp <= 0 ? "bg-red-600" : pct >= 80 ? "bg-yellow-500" : "bg-ink"}`;
+  $("#fiados-cupo-disp").textContent =
+    disp <= 0
+      ? `Cupo agotado — excedido en $${formatPrice(Math.abs(disp))}`
+      : `Disponible: $${formatPrice(disp)} (usado ${pct}%)`;
+}
+
+// ── Modal de edición de cupo ──
+function openCupoModal() {
+  if (!selectedFiado) return;
+  const f = fiadores.find((x) => x.id === selectedFiado.id) || selectedFiado;
+  $("#cupo-person").textContent = `Límite de fiado para ${f.nombre}`;
+  const cupo = cupoOf(f);
+  $("#cupo-monto").value = cupo ?? "";
+  $("#cupo-remove-btn").classList.toggle("hidden", cupo == null);
+  openModal("cupo-modal");
+  setTimeout(() => $("#cupo-monto").focus(), 50);
+}
+
+async function saveCupo(remove = false) {
+  if (!selectedFiado) return;
+  const f = fiadores.find((x) => x.id === selectedFiado.id);
+  if (!f) return;
+
+  let cupo = null;
+  if (!remove) {
+    const val = parseFloat($("#cupo-monto").value);
+    cupo = Number.isFinite(val) && val > 0 ? Math.round(val) : null;
+  }
+
+  f.cupo = cupo;
+  await localDB.putFiador(f);
+  await localDB.addToOutbox({
+    uid: currentUser.uid,
+    type: "fiadorCupo",
+    payload: { id: f.id, cupo },
+  });
+  scheduleFlush();
+
+  closeModal("cupo-modal");
+  renderCupoBox();
+  renderFiadosPeople();
+  showToast(
+    cupo == null
+      ? `${f.nombre} quedó sin límite de fiado`
+      : `Cupo de $${formatPrice(cupo)} fijado para ${f.nombre}`,
+    "success"
+  );
 }
 
 // Caja "Debe / A favor" del detalle (el saldo puede quedar negativo si se
@@ -1216,6 +1334,7 @@ async function openFiadoDetail(fiador) {
     ? new Date(fiador.ultimoMovimiento).toLocaleDateString("es", { day: "2-digit", month: "2-digit", year: "2-digit" })
     : "—";
   $("#fiados-person-count").textContent = `Último movimiento: ${ult}`;
+  renderCupoBox();
 
   // Movimientos de hoy (locales, gratis); el resto se carga a pedido.
   const todayPurchases = todaySales.filter(
@@ -1638,6 +1757,16 @@ async function confirmFiadoEntry() {
     }
   }
 
+  // Cupo de crédito: bloquea si la anotación deja la deuda sobre el límite
+  {
+    const f = fiadores.find((x) => x.id === selectedFiado.id) || selectedFiado;
+    const err = cupoError(f, feTotal());
+    if (err) {
+      showToast(err, "error");
+      return;
+    }
+  }
+
   const ts = Date.now();
   const sale = {
     items: feLines.map((l) => ({
@@ -1962,6 +2091,16 @@ async function posCharge() {
   }
 
   const total = cartTotal();
+
+  // Cupo de crédito: bloquea si la venta deja la deuda por encima del límite
+  if (posMethod === "fiado" && posFiado) {
+    const f = fiadores.find((x) => x.id === posFiado.id) || posFiado;
+    const err = cupoError(f, total);
+    if (err) {
+      showToast(err, "error");
+      return;
+    }
+  }
   const sale = {
     items,
     total,
@@ -2646,10 +2785,14 @@ function exportFiadosXlsx() {
     const saldo = f.saldo;
     const estado =
       saldo == null ? "Sin calcular" : saldo > 0 ? "Debe" : saldo < 0 ? "A favor" : "Al día";
+    const cupo = cupoOf(f);
+    const disp = cupoDisponible(f);
     return {
       "Persona": f.nombre,
       "Saldo": saldo == null ? "" : saldo,
       "Estado": estado,
+      "Cupo": cupo == null ? "Sin límite" : cupo,
+      "Cupo disponible": disp == null ? "" : Math.max(0, disp),
       "Último movimiento": f.ultimoMovimiento
         ? new Date(f.ultimoMovimiento).toLocaleDateString("es")
         : "",
@@ -3144,6 +3287,12 @@ function bindEvents() {
   $("#fiados-pay-btn").addEventListener("click", openAbonoModal);
   $("#fiados-delete-btn").addEventListener("click", deleteFiador);
   $("#fiados-history-btn").addEventListener("click", loadFullFiadoHistory);
+  $("#fiados-cupo-btn").addEventListener("click", openCupoModal);
+  $("#cupo-save-btn").addEventListener("click", () => saveCupo(false));
+  $("#cupo-remove-btn").addEventListener("click", () => saveCupo(true));
+  $("#cupo-monto").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") saveCupo(false);
+  });
   $("#fiados-export-btn").addEventListener("click", exportFiadosXlsx);
   $("#ab-total-btn").addEventListener("click", () => { $("#ab-monto").value = selectedFiadoSaldo; });
   $("#ab-save-btn").addEventListener("click", confirmAbono);
