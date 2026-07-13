@@ -11,7 +11,10 @@ import {
   onAuthStateChanged,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import {
-  getFirestore,
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
+  writeBatch,
   collection,
   doc,
   getDoc,
@@ -33,7 +36,12 @@ import { firebaseConfig } from "./config.js";
 
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
-export const db = getFirestore(app);
+// Persistencia offline: los documentos se cachean en IndexedDB.
+// Lecturas repetidas se sirven del caché (0 lecturas de red) y la app
+// funciona sin conexión. multipleTabManager evita errores con varias pestañas.
+export const db = initializeFirestore(app, {
+  localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
+});
 
 // ── Detección de cuota agotada ──────────────────────────────
 export function isQuotaError(err) {
@@ -335,101 +343,141 @@ export const abonosApi = {
 
 // ---------- Ventas (caja) ----------
 export const salesApi = {
+  // ── Idempotente y atómico ──
+  // ID determinístico: el ts local de la venta identifica su documento.
+  // Si el flush se reintenta (falló el borrado del outbox), el getDoc
+  // detecta que ya se subió y NO vuelve a descontar stock.
+  // writeBatch: stock + movimientos + venta se aplican todos o ninguno.
   async commit(uid, sale) {
-    for (const it of sale.items) {
-      // Pesables y manuales: no llevan control de stock (su "código" de
-      // línea no corresponde a un documento de producto).
+    const saleRef = doc(db, "usuarios", uid, "ventas", String(sale.ts));
+    const existing = await getDoc(saleRef);
+    if (existing.exists()) return; // ya subida en un intento anterior
+
+    const batch = writeBatch(db);
+    (sale.items || []).forEach((it, i) => {
       if (!it.pesable && !it.manual) {
-        await updateDoc(productDoc(uid, it.codigo), {
+        batch.update(productDoc(uid, it.codigo), {
           cantidad: increment(-it.cantidad),
           actualizado: serverTimestamp(),
         });
       }
-      await addDoc(movementsCol(uid), {
+      // Movimiento con ID determinístico: reintento sobreescribe, no duplica.
+      batch.set(doc(db, "usuarios", uid, "movimientos", `${sale.ts}-${i}`), {
         codigo: it.pesable ? (it.codigoBase || it.codigo) : it.codigo,
         nombre: it.nombre,
         accion: "salida",
         cantidad: it.cantidad,
         fecha: serverTimestamp(),
       });
-    }
-    await addDoc(salesCol(uid), {
+    });
+    batch.set(saleRef, {
       total: sale.total,
       metodoPago: sale.metodoPago,
       items: sale.items,
       fiadoId: sale.fiadoId || null,
       fiadoNombre: sale.fiadoNombre || null,
-      ts: sale.ts || Date.now(), // marca local: permite ubicar la venta al anularla
+      ts: sale.ts || Date.now(),
       fecha: serverTimestamp(),
     });
     if (sale.fiadoId) {
-      await adjustFiadorSaldo(uid, sale.fiadoId, sale.total || 0, sale.ts);
+      batch.set(
+        fiadorDoc(uid, sale.fiadoId),
+        { saldo: increment(sale.total || 0), ultimoMovimiento: sale.ts || Date.now() },
+        { merge: true }
+      );
     }
+    await batch.commit();
   },
 
   // Anula una venta ya subida: repone stock, registra movimientos de
-  // entrada y elimina el documento de la venta (ubicado por su ts local).
+  // entrada y elimina el documento. Atómico e idempotente: si el doc
+  // ya no existe (nunca se subió o ya se anuló), no toca el stock.
   async revert(uid, sale) {
-    for (const it of sale.items || []) {
+    const saleRef = doc(db, "usuarios", uid, "ventas", String(sale.ts));
+    const snap = await getDoc(saleRef);
+
+    // Ventas antiguas (creadas con addDoc): ubicar por campo ts.
+    let legacyRefs = [];
+    if (!snap.exists() && sale.ts) {
+      const q = query(salesCol(uid), where("ts", "==", sale.ts));
+      const legacy = await getDocs(q);
+      legacyRefs = legacy.docs.map((d) => d.ref);
+      if (legacyRefs.length === 0) return; // ya anulada o nunca subida
+    }
+
+    const batch = writeBatch(db);
+    (sale.items || []).forEach((it, i) => {
       if (!it.pesable && !it.manual) {
-        await updateDoc(productDoc(uid, it.codigo), {
+        batch.update(productDoc(uid, it.codigo), {
           cantidad: increment(it.cantidad || 0),
           actualizado: serverTimestamp(),
         });
       }
-      await addDoc(movementsCol(uid), {
+      batch.set(doc(db, "usuarios", uid, "movimientos", `anul-${sale.ts}-${i}`), {
         codigo: it.pesable ? (it.codigoBase || it.codigo) : it.codigo,
         nombre: `Anulación: ${it.nombre}`,
         accion: "entrada",
         cantidad: it.cantidad || 0,
         fecha: serverTimestamp(),
       });
-    }
-    if (sale.ts) {
-      const q = query(salesCol(uid), where("ts", "==", sale.ts));
-      const snap = await getDocs(q);
-      for (const d of snap.docs) {
-        await deleteDoc(doc(db, "usuarios", uid, "ventas", d.id));
-      }
-    }
+    });
+    if (snap.exists()) batch.delete(saleRef);
+    legacyRefs.forEach((r) => batch.delete(r));
     if (sale.fiadoId) {
-      await adjustFiadorSaldo(uid, sale.fiadoId, -(sale.total || 0));
+      batch.set(
+        fiadorDoc(uid, sale.fiadoId),
+        { saldo: increment(-(sale.total || 0)), ultimoMovimiento: Date.now() },
+        { merge: true }
+      );
     }
+    await batch.commit();
   },
 
-  // Corrige una venta ya subida: aplica los deltas de stock, registra
-  // movimientos de ajuste y actualiza el documento (ubicado por su ts local).
+  // Corrige una venta ya subida: deltas de stock + movimientos de ajuste
+  // + actualización del documento, todo en un batch atómico.
   // delta > 0 devuelve stock; delta < 0 descuenta más.
   async update(uid, sale, deltas, fiadoDelta) {
-    if (fiadoDelta && fiadoDelta.fiadoId && fiadoDelta.delta) {
-      await adjustFiadorSaldo(uid, fiadoDelta.fiadoId, fiadoDelta.delta);
+    const saleRef = doc(db, "usuarios", uid, "ventas", String(sale.ts));
+    const snap = await getDoc(saleRef);
+
+    let legacyRefs = [];
+    if (!snap.exists() && sale.ts) {
+      const q = query(salesCol(uid), where("ts", "==", sale.ts));
+      const legacy = await getDocs(q);
+      legacyRefs = legacy.docs.map((d) => d.ref);
     }
-    for (const d of deltas || []) {
-      await updateDoc(productDoc(uid, d.codigo), {
+
+    const batch = writeBatch(db);
+    if (fiadoDelta && fiadoDelta.fiadoId && fiadoDelta.delta) {
+      batch.set(
+        fiadorDoc(uid, fiadoDelta.fiadoId),
+        { saldo: increment(fiadoDelta.delta), ultimoMovimiento: Date.now() },
+        { merge: true }
+      );
+    }
+    (deltas || []).forEach((d, i) => {
+      batch.update(productDoc(uid, d.codigo), {
         cantidad: increment(d.delta),
         actualizado: serverTimestamp(),
       });
-      await addDoc(movementsCol(uid), {
+      batch.set(doc(db, "usuarios", uid, "movimientos", `ajus-${sale.ts}-${Date.now()}-${i}`), {
         codigo: d.codigo,
         nombre: `Ajuste venta: ${d.nombre}`,
         accion: d.delta > 0 ? "entrada" : "salida",
         cantidad: Math.abs(d.delta),
         fecha: serverTimestamp(),
       });
-    }
-    if (sale.ts) {
-      const q = query(salesCol(uid), where("ts", "==", sale.ts));
-      const snap = await getDocs(q);
-      for (const d of snap.docs) {
-        await updateDoc(doc(db, "usuarios", uid, "ventas", d.id), {
-          total: sale.total,
-          metodoPago: sale.metodoPago,
-          items: sale.items,
-          fiadoId: sale.fiadoId || null,
-          fiadoNombre: sale.fiadoNombre || null,
-        });
-      }
-    }
+    });
+    const fields = {
+      total: sale.total,
+      metodoPago: sale.metodoPago,
+      items: sale.items,
+      fiadoId: sale.fiadoId || null,
+      fiadoNombre: sale.fiadoNombre || null,
+    };
+    if (snap.exists()) batch.update(saleRef, fields);
+    legacyRefs.forEach((r) => batch.update(r, fields));
+    await batch.commit();
   },
 
   async fetchToday(uid) {

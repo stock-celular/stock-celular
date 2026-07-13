@@ -241,11 +241,13 @@ async function ensureDailySync() {
 // Semáforo: si ya hay un flush corriendo, espera a que termine y sale.
 async function flushOutbox() {
   if (flushing) return false; // ya hay uno en curso; el outbox se procesa solo
+  const uid = currentUser?.uid;
+  if (!uid) return false; // sesión cerrada mientras corría el debounce (logout)
   flushing = true;
   try {
     const ops = await localDB.getOutbox();
     for (const op of ops) {
-      if (op.uid !== currentUser.uid) continue; // ops de otro usuario: se respetan
+      if (op.uid !== uid) continue; // ops de otro usuario: se respetan
       try {
         if (op.type === "adjust") {
           await productsApi.adjustStock(
