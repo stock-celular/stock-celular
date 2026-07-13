@@ -358,3 +358,22 @@ button, input, select, textarea {
     transition-duration: 0.01ms !important;
   }
 }
+/* ─── Selección con teclado en resultados de búsqueda ───
+   Ítem resaltado con ↓/↑: píldora negra invertida, máximo contraste.
+   Fuerza blanco en todos los textos internos y aclara los badges. */
+.kb-selected {
+  background: #0a0a0a !important;
+  color: #ffffff !important;
+  outline: 2px solid #0a0a0a;
+  outline-offset: -2px;
+}
+
+.kb-selected p,
+.kb-selected span {
+  color: #ffffff !important;
+}
+
+/* Badges internos (precio, stock): fondo translúcido claro sobre el negro */
+.kb-selected span[class*="bg-"] {
+  background: rgba(255, 255, 255, 0.18) !important;
+}

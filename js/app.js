@@ -486,17 +486,75 @@ function posAddByCode(code) {
   renderCart();
 }
 
+// ============================================================
+//  Ranking de búsqueda de productos
+//  Orden: 1) nombre empieza con el término, 2) alguna palabra
+//  del nombre empieza con él, 3) el nombre lo contiene,
+//  4) solo el código lo contiene. Desempate: posición del match
+//  y luego alfabético.
+// ============================================================
+function normSearch(s) {
+  return (s || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, ""); // sin acentos: "café" ↔ "cafe"
+}
+
+function rankProducts(term, list) {
+  const t = normSearch(term);
+  if (!t) return [];
+  const scored = [];
+  for (const p of list) {
+    const nombre = normSearch(p.nombre);
+    const codigo = (p.codigo || "").toLowerCase();
+    let score;
+    if (nombre.startsWith(t)) score = 0;
+    else if (nombre.split(/\s+/).some((w) => w.startsWith(t))) score = 1;
+    else if (nombre.includes(t)) score = 2;
+    else if (codigo.includes(t)) score = 3;
+    else continue;
+    scored.push({ p, score, pos: nombre.indexOf(t) === -1 ? 999 : nombre.indexOf(t) });
+  }
+  scored.sort(
+    (a, b) =>
+      a.score - b.score ||
+      a.pos - b.pos ||
+      normSearch(a.p.nombre).localeCompare(normSearch(b.p.nombre), "es")
+  );
+  return scored.map((s) => s.p);
+}
+
+// ── Navegación con teclado en listas de resultados ──────────
+// Mantiene el índice resaltado y devuelve el elemento elegido con Enter.
+function moveListSelection(listEl, itemSelector, index, dir) {
+  const items = [...listEl.querySelectorAll(itemSelector)];
+  if (!items.length) return -1;
+  let i = index + dir;
+  if (i < 0) i = items.length - 1;
+  if (i >= items.length) i = 0;
+  items.forEach((el, k) => {
+    el.classList.toggle("kb-selected", k === i);
+  });
+  items[i].scrollIntoView({ block: "nearest" });
+  return i;
+}
+
+function clearListSelection(listEl, itemSelector) {
+  listEl.querySelectorAll(itemSelector).forEach((el) => {
+    el.classList.remove("kb-selected");
+  });
+}
+
 // ── Búsqueda por nombre en la caja ──────────────────────────
 let posSearchTimeout = null;
+let posSearchIndex = -1; // ítem resaltado con las flechas (-1 = ninguno)
 function posPendingSearch(term) {
   clearTimeout(posSearchTimeout);
   const results = $("#pos-search-results");
-  if (!term || term.length < 2) { results.classList.add("hidden"); return; }
+  if (!term || term.length < 2) { results.classList.add("hidden"); posSearchIndex = -1; return; }
   posSearchTimeout = setTimeout(() => {
-    const t = term.toLowerCase();
-    const matches = products
-      .filter((p) => (p.nombre || "").toLowerCase().includes(t))
-      .slice(0, 8);
+    const matches = rankProducts(term, products).slice(0, 8);
+    posSearchIndex = -1; // el texto cambió: se pierde la selección de flechas
     if (!matches.length) { results.classList.add("hidden"); return; }
     results.innerHTML = matches.map((p) => `
       <li data-code="${escapeAttr(p.codigo)}"
@@ -1603,21 +1661,18 @@ function feTotal() {
   return feLines.reduce((s, l) => s + (l.precio || 0) * (l.cantidad || 0), 0);
 }
 
+let feSearchIndex = -1; // ítem resaltado con las flechas en el modal de fiado
+
 function renderFeResults() {
   const box = $("#fe-results");
-  const term = $("#fe-search").value.trim().toLowerCase();
+  const term = $("#fe-search").value.trim();
+  feSearchIndex = -1; // el texto cambió: se pierde la selección
   if (term.length < 2) {
     box.classList.add("hidden");
     return;
   }
   // Pesables excluidos: sus precios se calculan por gramos en la caja
-  const matches = products
-    .filter(
-      (p) =>
-        !p.pesable &&
-        ((p.nombre || "").toLowerCase().includes(term) || (p.codigo || "").includes(term))
-    )
-    .slice(0, 8);
+  const matches = rankProducts(term, products.filter((p) => !p.pesable)).slice(0, 8);
   if (matches.length === 0) {
     box.classList.add("hidden");
     return;
@@ -2376,12 +2431,9 @@ function isLowStock(p) {
 function renderInventory() {
   const term = $("#inventory-search").value.trim().toLowerCase();
   const list = $("#inventory-list");
-  let filtered = products.filter(
-    (p) =>
-      !term ||
-      (p.nombre || "").toLowerCase().includes(term) ||
-      (p.codigo || "").includes(term)
-  );
+  // Con término: ordenado por relevancia (empieza con > palabra > contiene).
+  // Sin término: orden alfabético original.
+  let filtered = term ? rankProducts(term, products) : [...products];
   if (inventoryFilter === "low") filtered = filtered.filter(isLowStock);
 
   // Contador rojo en el botón "Bajo stock"
@@ -3252,8 +3304,41 @@ function bindEvents() {
     posInput.focus();
   };
   posInput.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") { e.preventDefault(); posAdd(); }
-    if (e.key === "Escape") { $("#pos-search-results").classList.add("hidden"); }
+    const results = $("#pos-search-results");
+    const open = !results.classList.contains("hidden");
+
+    if (open && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+      e.preventDefault();
+      posSearchIndex = moveListSelection(
+        results, "li[data-code]", posSearchIndex, e.key === "ArrowDown" ? 1 : -1
+      );
+      return;
+    }
+
+    if (e.key === "Enter") {
+      e.preventDefault();
+      // Si navegó con flechas, Enter elige ese producto.
+      // Sin selección, comportamiento clásico: agrega por código escaneado/tecleado
+      // (así el lector USB sigue funcionando igual).
+      if (open && posSearchIndex >= 0) {
+        const sel = results.querySelectorAll("li[data-code]")[posSearchIndex];
+        if (sel) {
+          results.classList.add("hidden");
+          posSearchIndex = -1;
+          posInput.value = "";
+          posAddByCode(sel.dataset.code);
+          posInput.focus();
+          return;
+        }
+      }
+      posAdd();
+      return;
+    }
+
+    if (e.key === "Escape") {
+      results.classList.add("hidden");
+      posSearchIndex = -1;
+    }
   });
   posInput.addEventListener("input", () => posPendingSearch(posInput.value.trim()));
   posInput.addEventListener("blur", () =>
@@ -3299,6 +3384,35 @@ function bindEvents() {
   $("#ab-monto").addEventListener("keydown", (e) => { if (e.key === "Enter") confirmAbono(); });
   $("#fe-save-btn").addEventListener("click", confirmFiadoEntry);
   $("#fe-search").addEventListener("input", renderFeResults);
+  $("#fe-search").addEventListener("keydown", (e) => {
+    const box = $("#fe-results");
+    const open = !box.classList.contains("hidden");
+    if (!open) return;
+
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      feSearchIndex = moveListSelection(
+        box, "[data-fe-add]:not([disabled])", feSearchIndex, e.key === "ArrowDown" ? 1 : -1
+      );
+      return;
+    }
+    if (e.key === "Enter") {
+      e.preventDefault();
+      // Enter elige el resaltado; sin flechas, el primero disponible
+      const items = box.querySelectorAll("[data-fe-add]:not([disabled])");
+      const sel = feSearchIndex >= 0 ? items[feSearchIndex] : items[0];
+      if (sel) {
+        const p = products.find((x) => x.codigo === sel.dataset.feAdd);
+        if (p) feAddProduct(p);
+      }
+      feSearchIndex = -1;
+      return;
+    }
+    if (e.key === "Escape") {
+      box.classList.add("hidden");
+      feSearchIndex = -1;
+    }
+  });
   $("#fe-add-line-btn").addEventListener("click", feAddFreeLine);
   $("#fe-valor").addEventListener("keydown", (e) => { if (e.key === "Enter") feAddFreeLine(); });
 
